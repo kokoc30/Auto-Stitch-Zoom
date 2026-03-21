@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Auto Stitch & Zoom Video App
 
 A focused web app for creators who need to upload short clips, put them in order, apply one zoom/crop setting, and export a single final MP4.
@@ -161,3 +162,7 @@ If you want to add them, place them in `docs/screenshots/` with names like:
 - Better automated tests
 - Durable storage for cloud deployments
 - More clip-level controls if the MVP grows later
+=======
+# Auto-Stitch-Zoom
+Auto-stitch web app for uploading, reordering, zoom-cropping, merging, previewing, and downloading short vertical videos.
+>>>>>>> 8a917fcb6e8a5a13b9e20d3f0e9fa3e9ce6557d8
