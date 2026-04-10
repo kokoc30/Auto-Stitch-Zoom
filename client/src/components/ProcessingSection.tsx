@@ -5,7 +5,7 @@ const PIPELINE_STEPS = [
   { key: 'validating', label: 'Validate', icon: Search },
   { key: 'resolving', label: 'Resolution', icon: Monitor },
   { key: 'processing', label: 'Process clips', icon: Film },
-  { key: 'concatenating', label: 'Merge', icon: Combine },
+  { key: 'merging', label: 'Merge', icon: Combine },
   { key: 'done', label: 'Done', icon: CheckCircle2 },
 ] as const;
 

@@ -4,7 +4,7 @@ export type ProcessingStep =
   | 'validating'
   | 'resolving'
   | 'processing'
-  | 'concatenating'
+  | 'merging'
   | 'done'
   | 'error';
 

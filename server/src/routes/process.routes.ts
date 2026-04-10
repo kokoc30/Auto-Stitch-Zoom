@@ -115,6 +115,26 @@ router.post('/process', async (req, res): Promise<void> => {
       return;
     }
 
+    if (processingOptions.transitionSettings !== undefined) {
+      const ts = processingOptions.transitionSettings;
+      if (
+        typeof ts.enabled !== 'boolean' ||
+        typeof ts.durationSec !== 'number' ||
+        !Number.isFinite(ts.durationSec) ||
+        ts.durationSec < 0.05 ||
+        ts.durationSec > 2.0
+      ) {
+        logger.warn('process', 'Rejected processing request with invalid transition settings', {
+          transitionSettings: ts,
+        });
+        res.status(400).json({
+          success: false,
+          error: 'Invalid transition settings. Duration must be between 0.05 and 2.0 seconds.',
+        });
+        return;
+      }
+    }
+
     const jobKey = JSON.stringify({
       clipFilenames: body.clipFilenames,
       processingOptions,
@@ -166,6 +186,8 @@ router.post('/process', async (req, res): Promise<void> => {
         activeJobs.delete(jobKey);
         logger.info('process', 'Processing job finished', {
           jobId,
+          accelerationMode: result.accelerationMode,
+          concatMode: result.concatMode,
           outputFilename: result.outputFilename,
         });
       })
@@ -203,14 +225,34 @@ router.get('/job/:jobId/status', (req, res): void => {
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // Helps SSE stay live behind nginx.
   res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const keepAliveTimer = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(': keepalive\n\n');
+    }
+  }, 15000);
 
   const currentStatus = jobStore.getJob(jobId);
   if (currentStatus) {
     res.write(`data: ${JSON.stringify(currentStatus)}\n\n`);
+
+    if (currentStatus.status === 'done' || currentStatus.status === 'error') {
+      const closeTimer = setTimeout(() => {
+        clearInterval(keepAliveTimer);
+        res.end();
+      }, 250);
+
+      req.on('close', () => {
+        clearInterval(keepAliveTimer);
+        clearTimeout(closeTimer);
+      });
+      return;
+    }
   }
 
   const unsubscribe = jobStore.subscribe(jobId, (status) => {
@@ -219,12 +261,14 @@ router.get('/job/:jobId/status', (req, res): void => {
     if (status.status === 'done' || status.status === 'error') {
       // Give the browser a moment to receive the last event.
       setTimeout(() => {
+        clearInterval(keepAliveTimer);
         res.end();
       }, 500);
     }
   });
 
   req.on('close', () => {
+    clearInterval(keepAliveTimer);
     unsubscribe();
   });
 });

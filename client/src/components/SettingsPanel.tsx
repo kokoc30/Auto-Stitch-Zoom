@@ -12,6 +12,9 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
   const processingStatus = useClipStore((s) => s.processingStatus);
   const setZoomPercent = useClipStore((s) => s.setZoomPercent);
   const resetZoom = useClipStore((s) => s.resetZoom);
+  const transitionEnabled = useClipStore((s) => s.transitionEnabled);
+  const setTransitionEnabled = useClipStore((s) => s.setTransitionEnabled);
+  const clipCount = useClipStore((s) => s.clips.length);
   const isProcessing = processingStatus === 'processing';
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,6 +84,30 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
           </div>
         </div>
       </div>
+
+      {clipCount > 1 && (
+        <div
+          className={
+            embedded
+              ? 'rounded-[20px] border border-[rgba(155,182,214,0.14)] bg-[rgba(8,19,33,0.54)] px-4 py-4'
+              : 'surface-muted p-3.5'
+          }
+        >
+          <label className="flex items-center justify-between gap-3">
+            <div>
+              <p className="supporting-label">Crossfade between clips</p>
+              <p className="fine-print mt-0.5">Subtle dissolve at each cut point</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={transitionEnabled}
+              onChange={(e) => setTransitionEnabled(e.target.checked)}
+              disabled={isProcessing}
+              className="studio-checkbox h-5 w-5 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 

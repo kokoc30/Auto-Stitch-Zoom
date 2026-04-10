@@ -10,9 +10,15 @@ export type ClipEditSettings = {
   muted?: boolean | undefined;
 };
 
+export type TransitionSettings = {
+  enabled: boolean;
+  durationSec: number;
+};
+
 export type ProcessingOptions = {
   zoomPercent: number;
   outputResolution: OutputResolution;
   clipEdits?: Record<string, ClipEditSettings> | undefined;
   exportFilenameBase?: string | undefined;
+  transitionSettings?: TransitionSettings | undefined;
 };

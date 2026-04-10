@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { FFMPEG_BIN, FFPROBE_BIN } from '../config/media-tools.config.js';
 import { UPLOAD_BASE_DIR } from '../config/upload.config.js';
+import { VIDEO_ACCELERATION } from '../config/video-processing.config.js';
 import { logger } from '../utils/logger.js';
 
 const execFileAsync = promisify(execFile);
@@ -87,6 +88,7 @@ export async function runStartupPreflight(): Promise<void> {
     ffprobeAvailable,
     ffmpegCommand: FFMPEG_BIN,
     ffprobeCommand: FFPROBE_BIN,
+    videoAcceleration: VIDEO_ACCELERATION,
     removedIncoming,
     removedThumbnails,
     removedJobs,

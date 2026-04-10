@@ -34,6 +34,7 @@ type ClipStore = {
   isUploading: boolean;
   defaultZoomPercent: number;
   zoomPercent: number;
+  transitionEnabled: boolean;
   toasts: ToastMessage[];
   processingStatus: ProcessingStatus;
   outputUrl: string | null;
@@ -60,6 +61,7 @@ type ClipStore = {
   setDefaultZoomPercent: (value: number) => void;
   resetDefaultZoom: () => void;
   resetZoom: () => void;
+  setTransitionEnabled: (enabled: boolean) => void;
   addToast: (text: string, type: ToastMessage['type']) => void;
   dismissToast: (id: string) => void;
   startProcessing: () => Promise<void>;
@@ -133,6 +135,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   isUploading: false,
   defaultZoomPercent: initialDefaultZoom,
   zoomPercent: initialDefaultZoom,
+  transitionEnabled: true,
   toasts: [],
   ...getIdleProcessingState(),
 
@@ -166,7 +169,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   },
 
   getProcessingOptions: () => {
-    const { zoomPercent, getOutputResolution, clips } = get();
+    const { zoomPercent, getOutputResolution, clips, transitionEnabled } = get();
     const outputResolution = getOutputResolution();
 
     if (!outputResolution) {
@@ -183,6 +186,10 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       zoomPercent,
       outputResolution,
       clipEdits: Object.keys(clipEdits).length > 0 ? clipEdits : undefined,
+      transitionSettings: {
+        enabled: transitionEnabled,
+        durationSec: 0.3,
+      },
     };
   },
 
@@ -344,6 +351,15 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
     set({
       zoomPercent: current.defaultZoomPercent,
+      ...getInvalidatedProcessingState(current.processingStatus),
+    });
+  },
+
+  setTransitionEnabled: (enabled) => {
+    const current = get();
+    if (enabled === current.transitionEnabled) return;
+    set({
+      transitionEnabled: enabled,
       ...getInvalidatedProcessingState(current.processingStatus),
     });
   },

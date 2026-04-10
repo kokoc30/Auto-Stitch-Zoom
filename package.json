@@ -6,6 +6,7 @@
     "install:client": "npm --prefix client install",
     "install:all": "npm run install:server && npm run install:client",
     "dev": "node ./scripts/dev.mjs",
+    "start:prod": "node ./scripts/start-production.mjs",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "typecheck:server": "npm --prefix server run typecheck",
