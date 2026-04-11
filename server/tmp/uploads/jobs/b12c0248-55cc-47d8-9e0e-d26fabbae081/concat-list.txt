@@ -1,4 +1,0 @@
-file 'C:/boss/server/tmp/uploads/jobs/b12c0248-55cc-47d8-9e0e-d26fabbae081/processed/clip_001.mp4'
-file 'C:/boss/server/tmp/uploads/jobs/b12c0248-55cc-47d8-9e0e-d26fabbae081/processed/clip_002.mp4'
-file 'C:/boss/server/tmp/uploads/jobs/b12c0248-55cc-47d8-9e0e-d26fabbae081/processed/clip_003.mp4'
-file 'C:/boss/server/tmp/uploads/jobs/b12c0248-55cc-47d8-9e0e-d26fabbae081/processed/clip_004.mp4'

@@ -1,2 +1,0 @@
-file 'C:/boss/server/tmp/uploads/jobs/d39d6384-c2e0-4a06-a411-c301d1e921de/processed/clip_001.mp4'
-file 'C:/boss/server/tmp/uploads/jobs/d39d6384-c2e0-4a06-a411-c301d1e921de/processed/clip_002.mp4'
