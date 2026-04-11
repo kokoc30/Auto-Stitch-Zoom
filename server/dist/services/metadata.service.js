@@ -19,10 +19,6 @@ function parseFrameRate(rate) {
     const parsed = Number.parseFloat(rate);
     return Number.isFinite(parsed) ? parsed : undefined;
 }
-/**
- * Extracts video metadata using ffprobe.
- * Returns a typed inspection error when the server cannot inspect the file.
- */
 export async function extractMetadata(filePath) {
     try {
         const { stdout } = await execFileAsync(FFPROBE_BIN, [

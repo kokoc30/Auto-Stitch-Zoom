@@ -13,14 +13,21 @@ const CLIENT_DIST_DIR = path.resolve(__dirname, '..', '..', 'client', 'dist');
 const CLIENT_INDEX_FILE = path.join(CLIENT_DIST_DIR, 'index.html');
 const shouldServeBuiltClient = process.env.NODE_ENV === 'production' && existsSync(CLIENT_INDEX_FILE);
 const app = express();
+// Cross-origin isolation headers: required for ffmpeg.wasm / SharedArrayBuffer
+// in browser-mode processing. Set on every response so static client assets,
+// /uploads, and /api all carry them. Safe because in production everything is
+// same-origin (served from this same Express server).
+app.use((_req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    next();
+});
 app.use(cors());
 app.use(express.json());
-// Serve uploaded files statically (for future thumbnail/preview access)
 app.use('/uploads', express.static(UPLOAD_BASE_DIR));
 if (shouldServeBuiltClient) {
     app.use(express.static(CLIENT_DIST_DIR, { index: false }));
 }
-// --- Routes ---
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', message: 'Auto Stitch & Zoom API running' });
 });
@@ -42,7 +49,7 @@ if (shouldServeBuiltClient) {
         });
     });
 }
-// Global error handler for multer and other errors
+// Multer upload errors end up here too.
 app.use((err, req, res, _next) => {
     logger.error('server', 'Unhandled request error', {
         method: req.method,

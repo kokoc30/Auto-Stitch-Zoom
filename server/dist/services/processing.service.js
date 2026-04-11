@@ -2,16 +2,11 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { UPLOAD_BASE_DIR } from '../config/upload.config.js';
 import { extractMetadata } from './metadata.service.js';
-import { normalizeAndZoomClip, concatenateClips } from './ffmpeg.service.js';
+import { normalizeAndZoomClip, concatenateClips, mergeWithTransitions } from './ffmpeg.service.js';
 import { jobStore } from './jobStore.js';
+import { resolveProcessingAcceleration } from './video-acceleration.service.js';
 import { logger } from '../utils/logger.js';
-/**
- * Orchestrates the full video processing pipeline with step-level
- * progress reporting via the jobStore.
- *
- * Steps reported:
- *   validating -> resolving -> processing (per clip) -> concatenating -> done
- */
+// Runs one job from start to finish and keeps the SSE progress updated.
 export async function processClips(jobId, request) {
     const { clipFilenames, processingOptions } = request;
     const { zoomPercent, outputResolution } = processingOptions;
@@ -100,49 +95,187 @@ export async function processClips(jobId, request) {
     await fs.mkdir(processedDir, { recursive: true });
     await fs.mkdir(outputDir, { recursive: true });
     const processedPaths = [];
-    for (let i = 0; i < inputPaths.length; i++) {
-        const inputPath = inputPaths[i];
-        const intermediateName = `clip_${String(i + 1).padStart(3, '0')}.mp4`;
-        const intermediatePath = path.join(processedDir, intermediateName);
-        const clipMetadata = await extractMetadata(inputPath);
+    const accelerationDecision = await resolveProcessingAcceleration();
+    let normalizationAcceleration = accelerationDecision.resolvedMode;
+    logger.info('processing', 'Resolved processing acceleration', {
+        jobId,
+        requestedMode: accelerationDecision.requestedMode,
+        resolvedMode: normalizationAcceleration,
+        gpuAvailable: accelerationDecision.gpuAvailable,
+        reason: accelerationDecision.reason,
+    });
+    async function normalizeAllClips(acceleration) {
+        processedPaths.length = 0;
+        await fs.rm(processedDir, { recursive: true, force: true });
+        await fs.mkdir(processedDir, { recursive: true });
+        for (let i = 0; i < inputPaths.length; i++) {
+            const inputPath = inputPaths[i];
+            const intermediateName = `clip_${String(i + 1).padStart(3, '0')}.mp4`;
+            const intermediatePath = path.join(processedDir, intermediateName);
+            const clipMetadata = await extractMetadata(inputPath);
+            jobStore.updateJob(jobId, {
+                status: 'processing',
+                currentStep: `Processing clip ${i + 1} of ${totalClips}...`,
+                clipIndex: i,
+                progress: clipProgress(i),
+            });
+            logger.info('processing', 'Processing clip', {
+                jobId,
+                acceleration,
+                clipNumber: i + 1,
+                totalClips,
+                filename: path.basename(inputPath),
+            });
+            await normalizeAndZoomClip({
+                inputPath,
+                outputPath: intermediatePath,
+                outputWidth,
+                outputHeight,
+                zoomFactor,
+                outputFrameRate,
+                hasAudio: clipMetadata.hasAudio === true,
+                acceleration,
+            });
+            processedPaths.push(intermediatePath);
+            jobStore.updateJob(jobId, {
+                progress: clipProgress(i + 1),
+                currentStep: `Clip ${i + 1} of ${totalClips} complete`,
+            });
+        }
+    }
+    try {
+        await normalizeAllClips(normalizationAcceleration);
+    }
+    catch (error) {
+        if (normalizationAcceleration !== 'gpu') {
+            throw error;
+        }
+        logger.warn('processing', 'GPU normalization failed; restarting the job on CPU', {
+            jobId,
+            error,
+        });
+        normalizationAcceleration = 'cpu';
         jobStore.updateJob(jobId, {
             status: 'processing',
-            currentStep: `Processing clip ${i + 1} of ${totalClips}...`,
-            clipIndex: i,
-            progress: clipProgress(i),
+            clipIndex: 0,
+            progress: 10,
+            currentStep: 'GPU processing failed. Restarting on CPU...',
         });
-        logger.info('processing', 'Processing clip', {
-            jobId,
-            clipNumber: i + 1,
-            totalClips,
-            filename: path.basename(inputPath),
-        });
-        await normalizeAndZoomClip(inputPath, intermediatePath, outputWidth, outputHeight, zoomFactor, outputFrameRate, clipMetadata.hasAudio === true);
-        processedPaths.push(intermediatePath);
-        jobStore.updateJob(jobId, {
-            progress: clipProgress(i + 1),
-            currentStep: `Clip ${i + 1} of ${totalClips} complete`,
-        });
+        await normalizeAllClips(normalizationAcceleration);
     }
-    jobStore.updateJob(jobId, {
-        status: 'concatenating',
-        currentStep: 'Merging clips into final video...',
-        progress: 88,
-    });
     const outputFilename = `final-output-${jobId.slice(0, 8)}.mp4`;
     const outputPath = path.join(outputDir, outputFilename);
     const concatListPath = path.join(jobDir, 'concat-list.txt');
-    logger.info('processing', 'Starting final concatenation', {
-        jobId,
-        clipCount: processedPaths.length,
-    });
-    await concatenateClips(processedPaths, outputPath, concatListPath);
+    // Resolve transition settings (default: enabled, 0.3s crossfade).
+    const defaultTransition = { enabled: true, durationSec: 0.3 };
+    const transitionSettings = processingOptions.transitionSettings ?? defaultTransition;
+    let useTransitions = transitionSettings.enabled && processedPaths.length > 1;
+    let transitionFallbackWarning;
+    // Validate preconditions for xfade path.
+    let clipDurations = [];
+    if (useTransitions) {
+        jobStore.updateJob(jobId, {
+            status: 'merging',
+            currentStep: 'Preparing crossfade merge...',
+            progress: 86,
+        });
+        const clipHasAudio = [];
+        for (const processedPath of processedPaths) {
+            const meta = await extractMetadata(processedPath);
+            clipDurations.push(meta.duration ?? -1);
+            clipHasAudio.push(meta.hasAudio === true);
+        }
+        const allDurationsValid = clipDurations.every((d) => d > 0 && Number.isFinite(d));
+        const allHaveAudio = clipHasAudio.every(Boolean);
+        let allTransitionsSafe = false;
+        if (allDurationsValid) {
+            allTransitionsSafe = clipDurations.every((d, i, arr) => i === arr.length - 1 ||
+                Math.min(transitionSettings.durationSec, d * 0.4, arr[i + 1] * 0.4) >= 0.05);
+        }
+        if (!allDurationsValid || !allHaveAudio || !allTransitionsSafe) {
+            useTransitions = false;
+            transitionFallbackWarning =
+                'Crossfade transitions could not be applied (clip metadata issue). Output uses hard cuts.';
+            logger.warn('processing', 'Transition preconditions not met; falling back to hard-cut merge', {
+                jobId,
+                allDurationsValid,
+                allHaveAudio,
+                allTransitionsSafe,
+            });
+        }
+    }
+    let concatMode;
+    if (useTransitions) {
+        jobStore.updateJob(jobId, {
+            status: 'merging',
+            currentStep: 'Merging clips with crossfade transitions...',
+            progress: 88,
+        });
+        logger.info('processing', 'Starting crossfade merge', {
+            jobId,
+            clipCount: processedPaths.length,
+            transitionDurationSec: transitionSettings.durationSec,
+            acceleration: normalizationAcceleration,
+        });
+        try {
+            await mergeWithTransitions({
+                clipPaths: processedPaths,
+                clipDurations,
+                transitionDurationSec: transitionSettings.durationSec,
+                outputPath,
+                acceleration: normalizationAcceleration,
+            });
+            concatMode = 'xfade';
+        }
+        catch (transitionError) {
+            logger.warn('processing', 'Crossfade merge failed; falling back to hard-cut merge', {
+                jobId,
+                error: transitionError,
+            });
+            await fs.rm(outputPath, { force: true });
+            transitionFallbackWarning =
+                'Crossfade transitions could not be applied. Output uses hard cuts.';
+            jobStore.updateJob(jobId, {
+                currentStep: 'Transitions unavailable — merging with hard cuts...',
+                progress: 90,
+            });
+            const concatResult = await concatenateClips({
+                clipPaths: processedPaths,
+                outputPath,
+                concatListPath,
+                acceleration: normalizationAcceleration,
+            });
+            concatMode = concatResult.mode;
+        }
+    }
+    else {
+        jobStore.updateJob(jobId, {
+            status: 'merging',
+            currentStep: 'Merging clips into final video...',
+            progress: 88,
+        });
+        logger.info('processing', 'Starting hard-cut merge', {
+            jobId,
+            clipCount: processedPaths.length,
+            acceleration: normalizationAcceleration,
+        });
+        const concatResult = await concatenateClips({
+            clipPaths: processedPaths,
+            outputPath,
+            concatListPath,
+            acceleration: normalizationAcceleration,
+        });
+        concatMode = concatResult.mode;
+    }
     try {
         const stat = await fs.stat(outputPath);
         logger.info('processing', 'Processing job completed', {
             jobId,
+            accelerationMode: normalizationAcceleration,
+            concatMode,
             outputFilename,
             outputSizeMb: Number((stat.size / (1024 * 1024)).toFixed(1)),
+            transitionFallbackWarning,
         });
     }
     catch {
@@ -156,7 +289,9 @@ export async function processClips(jobId, request) {
     }
     jobStore.updateJob(jobId, {
         status: 'done',
-        currentStep: 'Processing complete!',
+        currentStep: transitionFallbackWarning
+            ? 'Done — transitions were not applied'
+            : 'Processing complete!',
         progress: 100,
     });
     return {
@@ -167,6 +302,9 @@ export async function processClips(jobId, request) {
         outputHeight,
         outputFrameRate,
         clipCount: inputPaths.length,
+        accelerationMode: normalizationAcceleration,
+        concatMode,
+        warning: transitionFallbackWarning,
     };
 }
 //# sourceMappingURL=processing.service.js.map

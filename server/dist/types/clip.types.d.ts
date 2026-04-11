@@ -1,7 +1,3 @@
-/**
- * Server-side clip types — mirrors the client-side ClipItem.
- * Properties use `| undefined` to satisfy exactOptionalPropertyTypes.
- */
 import type { ClipEditSettings } from './processing.types.js';
 export type ClipItem = {
     id: string;

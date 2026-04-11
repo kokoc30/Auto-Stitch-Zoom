@@ -18,6 +18,7 @@ function runCommand(args, env = process.env) {
       cwd: rootDir,
       env,
       stdio: 'inherit',
+      shell: process.platform === 'win32',
     });
 
     child.on('error', reject);

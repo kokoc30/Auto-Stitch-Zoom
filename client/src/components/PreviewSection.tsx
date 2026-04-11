@@ -33,6 +33,7 @@ export function PreviewSection() {
 
         <div className="overflow-hidden rounded-[24px] border border-[rgba(155,182,214,0.14)] bg-[linear-gradient(180deg,rgba(7,15,27,0.95),rgba(4,10,19,0.94))] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <video
+            data-testid="preview-video"
             controls
             preload="metadata"
             src={previewUrl}

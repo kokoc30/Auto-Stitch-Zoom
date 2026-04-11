@@ -11,13 +11,9 @@ export type ProcessingResult = {
     outputHeight: number;
     outputFrameRate: number;
     clipCount: number;
+    accelerationMode: 'gpu' | 'cpu';
+    concatMode: 'copy' | 'reencode' | 'xfade';
+    warning?: string | undefined;
 };
-/**
- * Orchestrates the full video processing pipeline with step-level
- * progress reporting via the jobStore.
- *
- * Steps reported:
- *   validating -> resolving -> processing (per clip) -> concatenating -> done
- */
 export declare function processClips(jobId: string, request: ProcessingRequest): Promise<ProcessingResult>;
 //# sourceMappingURL=processing.service.d.ts.map

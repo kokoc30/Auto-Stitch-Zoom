@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { UploadCloud, Loader2, Smartphone, Clapperboard } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
 import { uploadVideos } from '../features/uploads/upload.api';
+import { createLocalClipItems } from '../features/uploads/local-metadata';
+import { storeFileRef } from '../features/processing/file-store';
 import {
   ACCEPTED_TYPES,
   validateUploadFiles,
@@ -13,6 +15,7 @@ export function UploadArea() {
 
   const isUploading = useClipStore((s) => s.isUploading);
   const processingStatus = useClipStore((s) => s.processingStatus);
+  const processingMode = useClipStore((s) => s.processingMode);
   const setUploading = useClipStore((s) => s.setUploading);
   const addClips = useClipStore((s) => s.addClips);
   const addToast = useClipStore((s) => s.addToast);
@@ -41,28 +44,58 @@ export function UploadArea() {
       setUploading(true);
 
       try {
-        const data = await uploadVideos(valid);
+        if (processingMode === 'browser') {
+          // Browser mode: extract metadata locally, no server upload
+          const data = await createLocalClipItems(valid);
 
-        if (data.clips && data.clips.length > 0) {
-          addClips(data.clips);
-        }
+          if (data.clips.length > 0) {
+            addClips(data.clips);
+          }
 
-        if (data.errors && data.errors.length > 0) {
           for (const err of data.errors) {
             addToast(err, 'error');
           }
-        }
+        } else {
+          // Server and auto mode: upload to server
+          const data = await uploadVideos(valid);
 
-        if (
-          !data.success &&
-          (!data.clips || data.clips.length === 0) &&
-          (!data.errors || data.errors.length === 0)
-        ) {
-          addToast('Upload failed. Please try again.', 'error');
+          if (data.clips && data.clips.length > 0) {
+            addClips(data.clips);
+
+            // In auto mode, also store File refs so browser fallback works
+            if (processingMode === 'auto') {
+              for (let i = 0; i < data.clips.length; i++) {
+                const clip = data.clips[i]!;
+                const file = valid[i];
+                if (file) {
+                  storeFileRef(clip.id, file);
+                }
+              }
+            }
+          }
+
+          if (data.errors && data.errors.length > 0) {
+            for (const err of data.errors) {
+              addToast(err, 'error');
+            }
+          }
+
+          if (
+            !data.success &&
+            (!data.clips || data.clips.length === 0) &&
+            (!data.errors || data.errors.length === 0)
+          ) {
+            addToast('Upload failed. Please try again.', 'error');
+          }
         }
       } catch (err) {
         console.error('[upload] Network error:', err);
-        addToast('Upload failed. Check that the server is running.', 'error');
+        addToast(
+          processingMode === 'browser'
+            ? 'Failed to read clip files locally.'
+            : 'Upload failed. Check that the server is running.',
+          'error',
+        );
       } finally {
         setUploading(false);
         if (fileInputRef.current) {
@@ -70,7 +103,7 @@ export function UploadArea() {
         }
       }
     },
-    [addClips, addToast, setUploading]
+    [addClips, addToast, setUploading, processingMode]
   );
 
   const handleClick = () => {
@@ -127,6 +160,7 @@ export function UploadArea() {
         accept={ACCEPTED_TYPES}
         onChange={handleFileChange}
         className="hidden"
+        data-testid="upload-file-input"
       />
 
       <div className="flex flex-col gap-3.5">

@@ -12,14 +12,24 @@ import {
   readStoredDefaultZoom,
   resetStoredDefaultZoom,
 } from '../features/settings/zoomSettings';
+import { type ProcessingStep } from '../features/processing/processing.api';
 import {
-  getDownloadUrl,
-  getPreviewUrl,
-  openProcessingStatusStream,
-  parseProcessingStatusEvent,
-  startProcessingJob,
-  type ProcessingStep,
-} from '../features/processing/processing.api';
+  createProcessor,
+  type Processor,
+  type ResolvedProcessingMode,
+} from '../features/processing/processor';
+import {
+  readStoredProcessingMode,
+  persistProcessingMode,
+  type ProcessingMode,
+} from '../features/processing/processing-mode';
+import { detectBrowserCapability } from '../features/processing/browser-capability';
+import {
+  isBlobUrl,
+  revokeManagedBlobUrl,
+  revokeAllManagedBlobUrls,
+} from '../features/processing/blob-url-manager';
+import { clearFileRefs, removeFileRef } from '../features/processing/file-store';
 
 type ToastMessage = {
   id: string;
@@ -36,7 +46,9 @@ type ClipStore = {
   zoomPercent: number;
   transitionEnabled: boolean;
   toasts: ToastMessage[];
+  processingMode: ProcessingMode;
   processingStatus: ProcessingStatus;
+  activeProcessingMode: ResolvedProcessingMode | null;
   outputUrl: string | null;
   previewUrl: string | null;
   errorMessage: string | null;
@@ -62,6 +74,7 @@ type ClipStore = {
   resetDefaultZoom: () => void;
   resetZoom: () => void;
   setTransitionEnabled: (enabled: boolean) => void;
+  setProcessingMode: (mode: ProcessingMode) => void;
   addToast: (text: string, type: ToastMessage['type']) => void;
   dismissToast: (id: string) => void;
   startProcessing: () => Promise<void>;
@@ -71,6 +84,7 @@ type ClipStore = {
 type ProcessingStateSlice = Pick<
   ClipStore,
   | 'processingStatus'
+  | 'activeProcessingMode'
   | 'outputUrl'
   | 'previewUrl'
   | 'errorMessage'
@@ -84,20 +98,43 @@ type ProcessingStateSlice = Pick<
 export { DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM };
 
 let toastCounter = 0;
-// Keep the current SSE connection around so reset/restart can close it.
-let activeEventSource: EventSource | null = null;
+let activeProcessor: Processor | null = null;
 const initialDefaultZoom = readStoredDefaultZoom();
+const initialProcessingMode = readStoredProcessingMode();
+
+/**
+ * beforeunload warning during active processing so users don't accidentally
+ * lose work by refreshing or navigating away. Registration is browser-only
+ * and explicitly removed on every completion path.
+ */
+function warnBeforeUnload(e: BeforeUnloadEvent) {
+  e.preventDefault();
+}
+
+function addBeforeUnloadGuard() {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', warnBeforeUnload);
+  }
+}
+
+function removeBeforeUnloadGuard() {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('beforeunload', warnBeforeUnload);
+  }
+}
 
 function closeActiveProcessingConnection() {
-  if (activeEventSource) {
-    activeEventSource.close();
-    activeEventSource = null;
+  if (activeProcessor) {
+    activeProcessor.abort();
+    activeProcessor = null;
   }
+  removeBeforeUnloadGuard();
 }
 
 function getIdleProcessingState(): ProcessingStateSlice {
   return {
     processingStatus: 'idle',
+    activeProcessingMode: null,
     outputUrl: null,
     previewUrl: null,
     errorMessage: null,
@@ -110,7 +147,9 @@ function getIdleProcessingState(): ProcessingStateSlice {
 }
 
 function getInvalidatedProcessingState(
-  processingStatus: ProcessingStatus
+  processingStatus: ProcessingStatus,
+  currentOutputUrl?: string | null,
+  currentPreviewUrl?: string | null,
 ): Partial<ProcessingStateSlice> {
   if (processingStatus === 'processing') {
     return {};
@@ -118,6 +157,13 @@ function getInvalidatedProcessingState(
 
   // If the project changes after a finished run, clear the old output state.
   closeActiveProcessingConnection();
+
+  // Revoke blob URLs from previous browser-mode output
+  if (isBlobUrl(currentOutputUrl)) revokeManagedBlobUrl(currentOutputUrl);
+  if (isBlobUrl(currentPreviewUrl) && currentPreviewUrl !== currentOutputUrl) {
+    revokeManagedBlobUrl(currentPreviewUrl);
+  }
+
   return getIdleProcessingState();
 }
 
@@ -137,6 +183,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   zoomPercent: initialDefaultZoom,
   transitionEnabled: true,
   toasts: [],
+  processingMode: initialProcessingMode,
   ...getIdleProcessingState(),
 
   getOutputResolution: () => {
@@ -203,7 +250,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   },
 
   getStartValidationMessage: () => {
-    const { clips, isUploading, zoomPercent, getProcessingOptions, processingStatus } = get();
+    const { clips, isUploading, zoomPercent, getProcessingOptions, processingStatus, processingMode, transitionEnabled } = get();
 
     if (processingStatus === 'processing') {
       return 'Processing is already running.';
@@ -223,6 +270,14 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
     if (!getProcessingOptions()) {
       return 'Output resolution is not resolved yet. Re-upload clips or wait for clip metadata before starting.';
+    }
+
+    if (processingMode === 'browser' && !detectBrowserCapability().crossOriginIsolated) {
+      return 'Browser mode is not available here — cross-origin isolation is missing. Switch to server or auto.';
+    }
+
+    if (processingMode === 'browser' && transitionEnabled && clips.length > 1) {
+      return 'Browser mode does not support crossfade transitions. Disable transitions or switch to server mode.';
     }
 
     return null;
@@ -255,7 +310,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
     if (accepted.length > 0) {
       set({
         clips: [...current.clips, ...accepted],
-        ...getInvalidatedProcessingState(current.processingStatus),
+        ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
       });
     }
   },
@@ -268,9 +323,11 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       return;
     }
 
+    removeFileRef(id);
+
     set({
       clips: nextClips,
-      ...getInvalidatedProcessingState(current.processingStatus),
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
   },
 
@@ -287,12 +344,14 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
     set({
       clips: updated,
-      ...getInvalidatedProcessingState(current.processingStatus),
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
   },
 
   clearClips: () => {
     closeActiveProcessingConnection();
+    clearFileRefs();
+    revokeAllManagedBlobUrls();
     set({
       clips: [],
       ...getIdleProcessingState(),
@@ -309,7 +368,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
     set({
       zoomPercent: clamped,
-      ...getInvalidatedProcessingState(current.processingStatus),
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
   },
 
@@ -351,7 +410,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
 
     set({
       zoomPercent: current.defaultZoomPercent,
-      ...getInvalidatedProcessingState(current.processingStatus),
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
   },
 
@@ -360,7 +419,17 @@ export const useClipStore = create<ClipStore>((set, get) => ({
     if (enabled === current.transitionEnabled) return;
     set({
       transitionEnabled: enabled,
-      ...getInvalidatedProcessingState(current.processingStatus),
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
+    });
+  },
+
+  setProcessingMode: (mode) => {
+    const current = get();
+    closeActiveProcessingConnection();
+    const persisted = persistProcessingMode(mode);
+    set({
+      processingMode: persisted,
+      ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
   },
 
@@ -391,6 +460,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       addToast,
       getStartValidationMessage,
       canStartProcessing,
+      processingMode,
     } = get();
 
     const validationMessage = getStartValidationMessage();
@@ -399,9 +469,22 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       return;
     }
 
+    const processingOptions = getProcessingOptions();
+    if (!processingOptions) {
+      const msg = 'Project settings are not resolved yet.';
+      set(buildProcessingErrorState(msg, 'Project not ready'));
+      addToast(msg, 'error');
+      return;
+    }
+
+    closeActiveProcessingConnection();
+
     set({
       processingStatus: 'processing',
+      activeProcessingMode:
+        processingMode === 'auto' ? null : (processingMode as ResolvedProcessingMode),
       outputUrl: null,
+      previewUrl: null,
       errorMessage: null,
       processingStep: 'validating',
       currentStepLabel: 'Starting...',
@@ -410,94 +493,54 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       processingTotalClips: clips.length,
     });
 
+    addBeforeUnloadGuard();
+
+    const processor = createProcessor(processingMode);
+    activeProcessor = processor;
+
     try {
-      const clipFilenames = clips.map((c) => c.filename);
-      const processingOptions = getProcessingOptions();
-
-      if (!processingOptions) {
-        const msg = 'Project settings are not resolved yet.';
-        set(buildProcessingErrorState(msg, 'Project not ready'));
-        addToast(msg, 'error');
-        return;
-      }
-
-      const data = await startProcessingJob({
-        clipFilenames,
-        processingOptions,
-      });
-
-      if (!data.success || !data.jobId) {
-        const msg = data.error || 'Failed to start processing.';
-        set(buildProcessingErrorState(msg, 'Failed to start'));
-        addToast(msg, 'error');
-        return;
-      }
-
-      const jobId = data.jobId;
-
-      closeActiveProcessingConnection();
-
-      const eventSource = openProcessingStatusStream(jobId);
-      activeEventSource = eventSource;
-
-      eventSource.onmessage = (event) => {
-        const status = parseProcessingStatusEvent(event.data);
-
-        if (!status) {
-          console.warn('[sse] Failed to parse SSE message:', event.data);
-          return;
-        }
+      const output = await processor.start(clips, processingOptions, (event) => {
+        // For auto mode, the delegate is chosen inside processor.start().
+        // Read resolvedMode on every progress tick so the UI can reveal it
+        // as soon as auto has committed to browser or server.
+        const resolved = processor.resolvedMode;
+        const nextActive =
+          get().activeProcessingMode ?? (resolved ?? null);
 
         set({
-          processingStep: status.status,
-          currentStepLabel: status.currentStep,
-          progressPercent: status.progress,
-          processingClipIndex: status.clipIndex,
-          processingTotalClips: status.totalClips,
+          processingStep: event.status,
+          currentStepLabel: event.currentStep,
+          progressPercent: event.progress,
+          processingClipIndex: event.clipIndex,
+          processingTotalClips: event.totalClips,
+          activeProcessingMode: nextActive,
         });
+      });
 
-        if (status.status === 'done') {
-          set({
-            processingStatus: 'done',
-            outputUrl: getDownloadUrl(jobId),
-            previewUrl: getPreviewUrl(jobId),
-          });
-          addToast('Processing complete! Your video is ready to download.', 'info');
-          eventSource.close();
-          activeEventSource = null;
-        } else if (status.status === 'error') {
-          const msg = status.error || 'Processing failed unexpectedly.';
-          set(buildProcessingErrorState(msg, status.currentStep || 'Processing failed'));
-          addToast(msg, 'error');
-          eventSource.close();
-          activeEventSource = null;
-        }
-      };
-
-      eventSource.onerror = () => {
-        const current = get().processingStatus;
-        if (current === 'processing') {
-          set(
-            buildProcessingErrorState(
-              'Lost connection to the server during processing.',
-              'Connection lost'
-            )
-          );
-          addToast('Lost connection to the server. Please try again.', 'error');
-        }
-        eventSource.close();
-        activeEventSource = null;
-      };
+      set({
+        processingStatus: 'done',
+        outputUrl: output.downloadUrl,
+        previewUrl: output.previewUrl,
+      });
+      addToast('Processing complete! Your video is ready to download.', 'info');
     } catch (err) {
-      console.error('[processing] Network error:', err);
-      const msg = 'Processing failed. Check that the server is running.';
-      set(buildProcessingErrorState(msg, 'Network error'));
+      const msg = err instanceof Error ? err.message : 'Processing failed unexpectedly.';
+      set(buildProcessingErrorState(msg, 'Processing failed'));
       addToast(msg, 'error');
+    } finally {
+      activeProcessor = null;
+      removeBeforeUnloadGuard();
     }
   },
 
   resetProcessing: () => {
+    const current = get();
     closeActiveProcessingConnection();
+    removeBeforeUnloadGuard();
+    if (isBlobUrl(current.outputUrl)) revokeManagedBlobUrl(current.outputUrl);
+    if (isBlobUrl(current.previewUrl) && current.previewUrl !== current.outputUrl) {
+      revokeManagedBlobUrl(current.previewUrl);
+    }
     set(getIdleProcessingState());
   },
 }));

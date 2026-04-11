@@ -17,6 +17,16 @@ const shouldServeBuiltClient =
 
 const app = express();
 
+// Cross-origin isolation headers: required for ffmpeg.wasm / SharedArrayBuffer
+// in browser-mode processing. Set on every response so static client assets,
+// /uploads, and /api all carry them. Safe because in production everything is
+// same-origin (served from this same Express server).
+app.use((_req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(UPLOAD_BASE_DIR));

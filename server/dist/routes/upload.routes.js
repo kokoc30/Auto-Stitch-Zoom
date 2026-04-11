@@ -12,7 +12,6 @@ import { extractMetadata } from '../services/metadata.service.js';
 import { logger } from '../utils/logger.js';
 const router = Router();
 const execFileAsync = promisify(execFile);
-// --- Multer configuration ---
 const storage = multer.diskStorage({
     destination: async (_req, _file, cb) => {
         const uploadDir = path.join(UPLOAD_BASE_DIR, 'incoming');
@@ -42,11 +41,6 @@ const upload = multer({
         files: MAX_FILES_PER_UPLOAD,
     },
 });
-/**
- * POST /api/upload
- * Accepts one or more video files, validates them,
- * extracts metadata, and returns a ClipItem[] response.
- */
 router.post('/', upload.array('videos', MAX_FILES_PER_UPLOAD), async (req, res) => {
     try {
         const files = req.files;
@@ -97,7 +91,7 @@ router.post('/', upload.array('videos', MAX_FILES_PER_UPLOAD), async (req, res) 
                 fileSize: file.size,
                 thumbnailUrl: undefined,
             };
-            // Preview thumbnails are best-effort so uploads still work if FFmpeg is unavailable.
+            // Thumbnail generation is optional, so uploads still work without it.
             try {
                 const thumbName = `${uuidv4()}.jpg`;
                 const thumbDir = path.join(UPLOAD_BASE_DIR, 'thumbnails');

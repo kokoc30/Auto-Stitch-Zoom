@@ -8,10 +8,15 @@ export type ClipEditSettings = {
     zoomPercentOverride?: number | undefined;
     muted?: boolean | undefined;
 };
+export type TransitionSettings = {
+    enabled: boolean;
+    durationSec: number;
+};
 export type ProcessingOptions = {
     zoomPercent: number;
     outputResolution: OutputResolution;
     clipEdits?: Record<string, ClipEditSettings> | undefined;
     exportFilenameBase?: string | undefined;
+    transitionSettings?: TransitionSettings | undefined;
 };
 //# sourceMappingURL=processing.types.d.ts.map

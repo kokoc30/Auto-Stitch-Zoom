@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
     server: {
       // Keep tunnel testing explicit instead of allowing every host in dev.
       allowedHosts,
+      // Required for SharedArrayBuffer (ffmpeg.wasm) — enables cross-origin isolation.
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
       proxy: {
         '/api': {
           target: 'http://localhost:3001',

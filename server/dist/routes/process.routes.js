@@ -8,10 +8,11 @@ import { processClips } from '../services/processing.service.js';
 import { jobStore } from '../services/jobStore.js';
 import { logger } from '../utils/logger.js';
 const router = Router();
-// Track active jobs to prevent duplicate processing
+// Simple in-memory guard so the same request does not start twice.
 const activeJobs = new Set();
 async function resolveOutputFile(jobId) {
     const currentJob = jobStore.getJob(jobId);
+    // Preview/download should wait until the export is fully done.
     if (currentJob) {
         if (currentJob.status === 'error') {
             const error = new Error(currentJob.error || 'Processing failed before the output became available.');
@@ -45,16 +46,10 @@ async function resolveOutputFile(jobId) {
         fileStat,
     };
 }
-/**
- * POST /api/process
- * Starts the video processing pipeline asynchronously.
- * Returns the jobId immediately so the client can subscribe to SSE updates.
- */
 router.post('/process', async (req, res) => {
     try {
         const body = req.body;
         const processingOptions = body.processingOptions;
-        // --- Validate request ---
         if (!body.clipFilenames || !Array.isArray(body.clipFilenames) || body.clipFilenames.length === 0) {
             logger.warn('process', 'Rejected processing request with no clip filenames');
             res.status(400).json({
@@ -92,7 +87,23 @@ router.post('/process', async (req, res) => {
             });
             return;
         }
-        // Simple guard against duplicate concurrent jobs
+        if (processingOptions.transitionSettings !== undefined) {
+            const ts = processingOptions.transitionSettings;
+            if (typeof ts.enabled !== 'boolean' ||
+                typeof ts.durationSec !== 'number' ||
+                !Number.isFinite(ts.durationSec) ||
+                ts.durationSec < 0.05 ||
+                ts.durationSec > 2.0) {
+                logger.warn('process', 'Rejected processing request with invalid transition settings', {
+                    transitionSettings: ts,
+                });
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid transition settings. Duration must be between 0.05 and 2.0 seconds.',
+                });
+                return;
+            }
+        }
         const jobKey = JSON.stringify({
             clipFilenames: body.clipFilenames,
             processingOptions,
@@ -109,9 +120,7 @@ router.post('/process', async (req, res) => {
             return;
         }
         activeJobs.add(jobKey);
-        // Generate jobId upfront so client can immediately subscribe to SSE
         const jobId = uuidv4();
-        // Initialize job in the store
         jobStore.updateJob(jobId, {
             status: 'validating',
             currentStep: 'Starting...',
@@ -123,18 +132,15 @@ router.post('/process', async (req, res) => {
             clipCount: body.clipFilenames.length,
             processingOptions,
         });
-        // Return jobId immediately — processing happens async
         res.json({
             success: true,
             jobId,
         });
-        // Run processing asynchronously
         processClips(jobId, {
             clipFilenames: body.clipFilenames,
             processingOptions,
         })
             .then((result) => {
-            // Update the job store with the output URL
             jobStore.updateJob(jobId, {
                 status: 'done',
                 currentStep: 'Processing complete!',
@@ -143,6 +149,8 @@ router.post('/process', async (req, res) => {
             activeJobs.delete(jobKey);
             logger.info('process', 'Processing job finished', {
                 jobId,
+                accelerationMode: result.accelerationMode,
+                concatMode: result.concatMode,
                 outputFilename: result.outputFilename,
             });
         })
@@ -170,10 +178,6 @@ router.post('/process', async (req, res) => {
         });
     }
 });
-/**
- * GET /api/job/:jobId/status
- * Server-Sent Events endpoint for real-time job progress updates.
- */
 router.get('/job/:jobId/status', (req, res) => {
     const { jobId } = req.params;
     if (!jobId) {
@@ -181,37 +185,47 @@ router.get('/job/:jobId/status', (req, res) => {
         res.status(400).json({ error: 'Missing job ID' });
         return;
     }
-    // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    res.setHeader('X-Accel-Buffering', 'no'); // Helps SSE stay live behind nginx.
     res.flushHeaders();
-    // Send current status immediately if job already exists
+    res.write(': connected\n\n');
+    const keepAliveTimer = setInterval(() => {
+        if (!res.writableEnded) {
+            res.write(': keepalive\n\n');
+        }
+    }, 15000);
     const currentStatus = jobStore.getJob(jobId);
     if (currentStatus) {
         res.write(`data: ${JSON.stringify(currentStatus)}\n\n`);
+        if (currentStatus.status === 'done' || currentStatus.status === 'error') {
+            const closeTimer = setTimeout(() => {
+                clearInterval(keepAliveTimer);
+                res.end();
+            }, 250);
+            req.on('close', () => {
+                clearInterval(keepAliveTimer);
+                clearTimeout(closeTimer);
+            });
+            return;
+        }
     }
-    // Subscribe to future updates
     const unsubscribe = jobStore.subscribe(jobId, (status) => {
         res.write(`data: ${JSON.stringify(status)}\n\n`);
-        // Close connection when job reaches terminal state
         if (status.status === 'done' || status.status === 'error') {
-            // Small delay to ensure the client receives the final event
+            // Give the browser a moment to receive the last event.
             setTimeout(() => {
+                clearInterval(keepAliveTimer);
                 res.end();
             }, 500);
         }
     });
-    // Clean up on client disconnect
     req.on('close', () => {
+        clearInterval(keepAliveTimer);
         unsubscribe();
     });
 });
-/**
- * GET /api/preview/:jobId
- * Streams the final processed video inline for browser preview playback.
- */
 router.get('/preview/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
@@ -292,10 +306,6 @@ router.get('/preview/:jobId', async (req, res) => {
         res.status(500).json({ success: false, error: 'Preview failed unexpectedly.' });
     }
 });
-/**
- * GET /api/download/:jobId
- * Downloads the final processed video file.
- */
 router.get('/download/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;

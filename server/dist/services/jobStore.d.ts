@@ -1,20 +1,12 @@
-/**
- * Represents the current status of a processing job.
- * Streamed to the client via SSE for real-time progress updates.
- */
 export type JobStatus = {
     jobId: string;
-    status: 'validating' | 'resolving' | 'processing' | 'concatenating' | 'done' | 'error';
+    status: 'validating' | 'resolving' | 'processing' | 'merging' | 'done' | 'error';
     currentStep: string;
     clipIndex: number;
     totalClips: number;
     progress: number;
     error?: string | undefined;
 };
-/**
- * In-memory job status store with EventEmitter-based subscription
- * for real-time SSE streaming to clients.
- */
 declare class JobStore {
     private jobs;
     private emitter;

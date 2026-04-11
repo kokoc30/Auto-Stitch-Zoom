@@ -1,6 +1,8 @@
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Server, Globe, Sparkles } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
 import { MIN_ZOOM, MAX_ZOOM } from '../features/settings/zoomSettings';
+import { detectBrowserCapability } from '../features/processing/browser-capability';
+import type { ProcessingMode } from '../features/processing/processing-mode';
 
 type SettingsPanelProps = {
   embedded?: boolean;
@@ -14,8 +16,19 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
   const resetZoom = useClipStore((s) => s.resetZoom);
   const transitionEnabled = useClipStore((s) => s.transitionEnabled);
   const setTransitionEnabled = useClipStore((s) => s.setTransitionEnabled);
+  const processingMode = useClipStore((s) => s.processingMode);
+  const setProcessingMode = useClipStore((s) => s.setProcessingMode);
   const clipCount = useClipStore((s) => s.clips.length);
   const isProcessing = processingStatus === 'processing';
+
+  const browserCap = detectBrowserCapability();
+  const browserAvailable = browserCap.crossOriginIsolated;
+
+  const modeOptions: { value: ProcessingMode; label: string; icon: typeof Server; hint: string }[] = [
+    { value: 'server', label: 'Server', icon: Server, hint: 'Process on the backend' },
+    { value: 'browser', label: 'Browser', icon: Globe, hint: 'Process on your machine' },
+    { value: 'auto', label: 'Auto', icon: Sparkles, hint: 'Best option chosen for you' },
+  ];
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const num = parseInt(e.target.value, 10);
@@ -108,6 +121,56 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
           </label>
         </div>
       )}
+
+      <div
+        className={
+          embedded
+            ? 'rounded-[20px] border border-[rgba(155,182,214,0.14)] bg-[rgba(8,19,33,0.54)] px-4 py-4'
+            : 'surface-muted p-3.5'
+        }
+      >
+        <p className="supporting-label">Processing mode</p>
+        <div className="mt-3 flex gap-2">
+          {modeOptions.map(({ value, label, icon: Icon }) => {
+            const isActive = processingMode === value;
+            const isDisabled =
+              isProcessing || (!browserAvailable && value !== 'server');
+
+            return (
+              <button
+                key={value}
+                data-testid={`mode-${value}`}
+                type="button"
+                onClick={() => setProcessingMode(value)}
+                disabled={isDisabled}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-[14px] border px-3 py-2.5 text-xs font-semibold transition duration-200 ${
+                  isActive
+                    ? 'border-[rgba(125,211,252,0.34)] bg-[rgba(13,34,58,0.92)] text-white shadow-[0_8px_18px_-12px_rgba(56,189,248,0.6)]'
+                    : 'border-[rgba(155,182,214,0.14)] bg-[rgba(7,17,31,0.44)] text-[var(--text-soft)] hover:border-[rgba(155,182,214,0.24)] hover:text-white'
+                } ${isDisabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                title={
+                  !browserAvailable && value !== 'server'
+                    ? 'Requires cross-origin isolation headers'
+                    : undefined
+                }
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="fine-print mt-2">
+          {processingMode === 'server' && 'Uses backend FFmpeg for full-quality processing.'}
+          {processingMode === 'browser' && 'Processes locally in your browser. Best for lightweight projects.'}
+          {processingMode === 'auto' && 'Picks browser for small projects, server for heavier work.'}
+        </p>
+        {!browserAvailable && (
+          <p className="fine-print mt-1.5 text-[#fecdd3]">
+            Browser mode unavailable — cross-origin isolation headers are not set.
+          </p>
+        )}
+      </div>
     </div>
   );
 

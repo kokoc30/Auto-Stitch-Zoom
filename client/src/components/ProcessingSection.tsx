@@ -48,6 +48,17 @@ export function ProcessingSection({ embedded = false }: ProcessingSectionProps) 
   const progressPercent = useClipStore((s) => s.progressPercent);
   const processingClipIndex = useClipStore((s) => s.processingClipIndex);
   const processingTotalClips = useClipStore((s) => s.processingTotalClips);
+  const activeProcessingMode = useClipStore((s) => s.activeProcessingMode);
+  const processingMode = useClipStore((s) => s.processingMode);
+
+  const activeModeLabel =
+    activeProcessingMode === 'browser'
+      ? 'Processing in this browser'
+      : activeProcessingMode === 'server'
+        ? 'Processing on the server'
+        : processingMode === 'auto'
+          ? 'Choosing the best runtime...'
+          : null;
 
   const isProcessing = processingStatus === 'processing';
   const isDone = processingStatus === 'done';
@@ -120,6 +131,7 @@ export function ProcessingSection({ embedded = false }: ProcessingSectionProps) 
       )}
 
       <button
+        data-testid="start-processing-button"
         onClick={handleStart}
         disabled={!canStart}
         className={`flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[20px] px-4 py-3.5 text-sm font-semibold transition duration-200 ${
@@ -151,6 +163,14 @@ export function ProcessingSection({ embedded = false }: ProcessingSectionProps) 
       {isProcessing && (
         <div className="space-y-3">
           <div className="rounded-[20px] border border-[rgba(155,182,214,0.14)] bg-[rgba(8,19,33,0.54)] p-4">
+            {activeModeLabel && (
+              <div
+                data-testid="active-processing-mode"
+                className="mb-3 inline-flex items-center gap-2 rounded-full border border-[rgba(125,211,252,0.22)] bg-[rgba(13,34,58,0.7)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--accent)]"
+              >
+                {activeModeLabel}
+              </div>
+            )}
             <div className="mb-2 flex items-center justify-between gap-3 text-sm">
               <span className="font-medium text-white">{currentStepLabel || 'Starting...'}</span>
               <span className="font-semibold tabular-nums text-[var(--accent)]">
@@ -238,7 +258,10 @@ export function ProcessingSection({ embedded = false }: ProcessingSectionProps) 
       )}
 
       {isDone && (
-        <div className="tone-success flex items-start gap-3 px-3.5 py-3">
+        <div
+          data-testid="processing-complete"
+          className="tone-success flex items-start gap-3 px-3.5 py-3"
+        >
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
           <div>
             <p className="text-sm font-semibold text-white">Processing complete</p>

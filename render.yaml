@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: auto-stitch-zoom
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"

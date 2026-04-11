@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --prefix client run test)",
+      "Bash(xargs cat:*)"
+    ]
+  }
+}

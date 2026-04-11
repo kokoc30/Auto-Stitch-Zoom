@@ -47,6 +47,7 @@ export function ClipCard({ clip, index, onRemove, disabled = false }: ClipCardPr
 
   return (
     <div
+      data-testid="clip-card"
       ref={setNodeRef}
       style={style}
       className={`group relative flex items-center gap-4 rounded-[20px] border px-4 py-3.5 transition duration-200 ${

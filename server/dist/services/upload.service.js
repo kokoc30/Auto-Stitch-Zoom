@@ -1,10 +1,6 @@
 import path from 'node:path';
 import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES } from '../config/upload.config.js';
 const SUPPORTED_VIDEO_CODECS = ['h264', 'hevc', 'vp8', 'vp9', 'av1', 'mpeg4', 'prores'];
-/**
- * Validates that a file has an allowed extension and MIME type.
- * Returns an error message string if invalid, or null if valid.
- */
 export function validateFile(originalName, mimeType, fileSize) {
     const ext = path.extname(originalName).toLowerCase();
     if (fileSize !== undefined && fileSize <= 0) {
@@ -13,18 +9,13 @@ export function validateFile(originalName, mimeType, fileSize) {
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
         return `"${originalName}" has an unsupported file type (${ext}). Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`;
     }
-    // Some systems report different MIME types - be lenient if extension is OK
+    // Some browsers send odd MIME types, so the extension stays the main check.
     const allowedMimes = ALLOWED_MIME_TYPES;
     if (mimeType && !allowedMimes.includes(mimeType) && mimeType !== 'application/octet-stream') {
         return `"${originalName}" has an unexpected MIME type (${mimeType}). Allowed: .mp4, .mov, .webm`;
     }
     return null;
 }
-/**
- * Validates inspected video metadata after ffprobe runs.
- * Returns a clear user-facing error when the file appears corrupt,
- * unsupported, or the server cannot inspect media files.
- */
 export function validateVideoMetadata(originalName, metadata) {
     if (metadata.inspectionError === 'ffprobe-unavailable') {
         return 'Video inspection is unavailable on the server. Install FFmpeg/ffprobe on PATH, or configure FFMPEG_BIN and FFPROBE_BIN, to validate and process uploads.';

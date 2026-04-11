@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Self-hosted ffmpeg.wasm core runtime, copied from node_modules by the
+# prebuild script (see scripts/copy-ffmpeg-core.mjs). ~32 MB; must not be
+# checked into git.
+public/ffmpeg/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

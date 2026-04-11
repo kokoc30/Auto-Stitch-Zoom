@@ -1,8 +1,5 @@
 import { EventEmitter } from 'node:events';
-/**
- * In-memory job status store with EventEmitter-based subscription
- * for real-time SSE streaming to clients.
- */
+// Small in-memory store for SSE progress updates.
 class JobStore {
     jobs = new Map();
     emitter = new EventEmitter();

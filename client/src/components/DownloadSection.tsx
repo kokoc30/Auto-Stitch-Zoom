@@ -36,6 +36,7 @@ export function DownloadSection() {
         </div>
 
         <a
+          data-testid="download-link"
           href={outputUrl}
           download="final-output.mp4"
           className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[20px] border border-white/80 bg-white px-4 py-3.5 text-sm font-semibold text-[#03121d] transition duration-200 shadow-[0_20px_48px_-28px_rgba(255,255,255,0.5)] hover:-translate-y-0.5 hover:bg-[#f4fbff] active:translate-y-0"

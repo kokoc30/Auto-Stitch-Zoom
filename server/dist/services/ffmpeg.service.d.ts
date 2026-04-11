@@ -1,24 +1,39 @@
-/**
- * Normalizes a single clip: scales up by zoom factor, then center-crops
- * to the target output frame size. Encodes as H.264/AAC intermediate.
- *
- * @param inputPath  - Absolute path to the source clip
- * @param outputPath - Absolute path for the normalized intermediate output
- * @param outputWidth  - Target output frame width (e.g. 1080)
- * @param outputHeight - Target output frame height (e.g. 1920)
- * @param zoomFactor   - Zoom multiplier (e.g. 1.09 for 109%)
- */
-export declare function normalizeAndZoomClip(inputPath: string, outputPath: string, outputWidth: number, outputHeight: number, zoomFactor: number, outputFrameRate: number, hasAudio: boolean): Promise<void>;
-/**
- * Concatenates multiple normalized clips into one final output using
- * the FFmpeg concat demuxer and a final compatibility-focused encode.
- *
- * All input clips MUST have matching stream structure, frame size, and frame rate
- * (which is intended to be guaranteed after normalizeAndZoomClip).
- *
- * @param clipPaths  - Ordered list of intermediate clip paths
- * @param outputPath - Absolute path for the final merged output
- * @param concatListPath - Path to write the temporary concat list file
- */
-export declare function concatenateClips(clipPaths: string[], outputPath: string, concatListPath: string): Promise<void>;
+import { NVIDIA_GPU_VIDEO_ENCODER, type ProcessingAcceleration } from './video-acceleration.service.js';
+export type NormalizationOptions = {
+    inputPath: string;
+    outputPath: string;
+    outputWidth: number;
+    outputHeight: number;
+    zoomFactor: number;
+    outputFrameRate: number;
+    hasAudio: boolean;
+    acceleration: ProcessingAcceleration;
+};
+export type NormalizationResult = {
+    acceleration: ProcessingAcceleration;
+    videoEncoder: string;
+};
+export type ConcatenationOptions = {
+    clipPaths: string[];
+    outputPath: string;
+    concatListPath: string;
+    acceleration: ProcessingAcceleration;
+};
+export type ConcatenationResult = {
+    mode: 'copy' | 'reencode' | 'xfade';
+    videoEncoder: 'copy' | 'libx264' | typeof NVIDIA_GPU_VIDEO_ENCODER;
+};
+export type TransitionMergeOptions = {
+    clipPaths: string[];
+    clipDurations: number[];
+    transitionDurationSec: number;
+    outputPath: string;
+    acceleration: ProcessingAcceleration;
+};
+export type TransitionMergeResult = {
+    videoEncoder: 'libx264' | typeof NVIDIA_GPU_VIDEO_ENCODER;
+};
+export declare function normalizeAndZoomClip(options: NormalizationOptions): Promise<NormalizationResult>;
+export declare function concatenateClips(options: ConcatenationOptions): Promise<ConcatenationResult>;
+export declare function mergeWithTransitions(options: TransitionMergeOptions): Promise<TransitionMergeResult>;
 //# sourceMappingURL=ffmpeg.service.d.ts.map
