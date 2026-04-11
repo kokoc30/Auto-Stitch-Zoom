@@ -4,14 +4,30 @@ import type { ProcessingOptions } from '../../types/processing';
 /** Path to the self-hosted ffmpeg.wasm core assets (see copy-ffmpeg-core.mjs). */
 const FFMPEG_CORE_PROBE_URL = '/ffmpeg/esm/ffmpeg-core.wasm';
 
-/** Maximum number of clips for browser-local processing. */
-const MAX_BROWSER_CLIPS = 3;
+// Browser-local processing workload caps.
+//
+// These bound ffmpeg.wasm memory and runtime in a typical desktop browser
+// tab. The prior caps (3 clips / 100 MB / 30 s) were too conservative for
+// real multi-clip projects — auto mode fell back to server on almost any
+// realistic job. The values below still stay well under the practical
+// wasm32 linear-memory ceiling (~2 GB for MEMFS + working buffers in
+// Chrome) and keep single-threaded encoding runtime reasonable on
+// mid-range laptops, but admit normal small multi-clip reels.
+//
+// A per-clip byte cap is included separately so one oversized source
+// cannot dominate even when the total is within budget.
 
-/** Maximum total file size in bytes (100 MB). */
-const MAX_BROWSER_TOTAL_BYTES = 100 * 1024 * 1024;
+/** Maximum number of clips for browser-local processing. */
+export const MAX_BROWSER_CLIPS = 6;
+
+/** Maximum total file size in bytes (200 MB). */
+export const MAX_BROWSER_TOTAL_BYTES = 200 * 1024 * 1024;
 
 /** Maximum total duration in seconds. */
-const MAX_BROWSER_TOTAL_DURATION_SEC = 30;
+export const MAX_BROWSER_TOTAL_DURATION_SEC = 90;
+
+/** Maximum per-clip file size in bytes (80 MB). */
+export const MAX_BROWSER_PER_CLIP_BYTES = 80 * 1024 * 1024;
 
 export type BrowserCapability = {
   crossOriginIsolated: boolean;
@@ -92,6 +108,18 @@ function evaluateAutoPolicy(
     return {
       mode: 'server',
       reason: `Total file size too large for browser mode (${totalMB} MB > ${Math.round(MAX_BROWSER_TOTAL_BYTES / (1024 * 1024))} MB).`,
+    };
+  }
+
+  const oversizedClip = clips.find(
+    (c) => (c.fileSize ?? 0) > MAX_BROWSER_PER_CLIP_BYTES,
+  );
+  if (oversizedClip) {
+    const clipMB = Math.round((oversizedClip.fileSize ?? 0) / (1024 * 1024));
+    const capMB = Math.round(MAX_BROWSER_PER_CLIP_BYTES / (1024 * 1024));
+    return {
+      mode: 'server',
+      reason: `One clip exceeds the per-clip size limit for browser mode (${clipMB} MB > ${capMB} MB).`,
     };
   }
 

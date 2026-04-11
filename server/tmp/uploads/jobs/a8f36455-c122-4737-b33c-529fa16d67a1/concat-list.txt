@@ -1,0 +1,4 @@
+file 'C:/boss/server/tmp/uploads/jobs/a8f36455-c122-4737-b33c-529fa16d67a1/processed/clip_001.mp4'
+file 'C:/boss/server/tmp/uploads/jobs/a8f36455-c122-4737-b33c-529fa16d67a1/processed/clip_002.mp4'
+file 'C:/boss/server/tmp/uploads/jobs/a8f36455-c122-4737-b33c-529fa16d67a1/processed/clip_003.mp4'
+file 'C:/boss/server/tmp/uploads/jobs/a8f36455-c122-4737-b33c-529fa16d67a1/processed/clip_004.mp4'

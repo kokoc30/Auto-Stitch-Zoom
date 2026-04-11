@@ -8,6 +8,14 @@ const FIXTURE = path.resolve(__dirname, 'fixtures/test-clip.mp4');
  * and confirm the preview + download surfaces render with a valid output.
  */
 test.describe('server mode', () => {
+  // Server mode is unavailable in hosted browser-only deployments — the
+  // server processing + upload routes respond 403 and the UI hides the
+  // Server button. Skip this suite in that profile.
+  test.skip(
+    process.env.HOSTED_BROWSER_ONLY === 'true',
+    'Server mode is disabled in HOSTED_BROWSER_ONLY deployments.',
+  );
+
   test('uploads, processes, and exposes preview + download', async ({ page }) => {
     await page.goto('/');
 

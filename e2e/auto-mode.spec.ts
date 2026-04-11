@@ -11,6 +11,14 @@ const FIXTURE_2 = path.resolve(__dirname, 'fixtures/test-clip-2.mp4');
  * across multiple clips should force the server fallback.
  */
 test.describe('auto mode routing', () => {
+  // Auto mode's server-fallback branch is unavailable in hosted browser-only
+  // deployments — the UI hides the Auto button entirely and the policy
+  // throws ServerProcessingDisabledError instead of routing to server.
+  test.skip(
+    process.env.HOSTED_BROWSER_ONLY === 'true',
+    'Auto mode server routing is disabled in HOSTED_BROWSER_ONLY deployments.',
+  );
+
   test('routes a tiny single clip to browser processing', async ({ page }) => {
     await page.goto('/');
 

@@ -4,6 +4,7 @@ import { useClipStore } from '../store/useClipStore';
 import { uploadVideos } from '../features/uploads/upload.api';
 import { createLocalClipItems } from '../features/uploads/local-metadata';
 import { storeFileRef } from '../features/processing/file-store';
+import { HOSTED_BROWSER_ONLY } from '../features/processing/hosted-mode';
 import {
   ACCEPTED_TYPES,
   validateUploadFiles,
@@ -43,8 +44,13 @@ export function UploadArea() {
 
       setUploading(true);
 
+      // In hosted browser-only deployments, always take the local path —
+      // even if processingMode momentarily holds a stale 'server'/'auto'
+      // value — so large files never leave the user's machine.
+      const useLocalUploadPath = HOSTED_BROWSER_ONLY || processingMode === 'browser';
+
       try {
-        if (processingMode === 'browser') {
+        if (useLocalUploadPath) {
           // Browser mode: extract metadata locally, no server upload
           const data = await createLocalClipItems(valid);
 
@@ -91,7 +97,7 @@ export function UploadArea() {
       } catch (err) {
         console.error('[upload] Network error:', err);
         addToast(
-          processingMode === 'browser'
+          useLocalUploadPath
             ? 'Failed to read clip files locally.'
             : 'Upload failed. Check that the server is running.',
           'error',

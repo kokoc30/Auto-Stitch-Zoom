@@ -16,6 +16,7 @@ import { validateFile, validateVideoMetadata } from '../services/upload.service.
 import { extractMetadata } from '../services/metadata.service.js';
 import type { ClipItem, UploadResponse } from '../types/clip.types.js';
 import { logger } from '../utils/logger.js';
+import { HOSTED_BROWSER_ONLY } from '../env.js';
 
 const router = Router();
 const execFileAsync = promisify(execFile);
@@ -51,8 +52,24 @@ const upload = multer({
   },
 });
 
+// Hosted browser-only guard. MUST run before multer so a stale client that
+// still targets /api/upload does not cause Render to buffer hundreds of MB
+// into /app/server/tmp/uploads/incoming before we respond.
 router.post(
   '/',
+  (req, res, next) => {
+    if (HOSTED_BROWSER_ONLY) {
+      res.status(403).json({
+        success: false,
+        clips: [],
+        errors: [
+          'Uploads are disabled on this deployment. Processing runs locally in your browser.',
+        ],
+      } satisfies UploadResponse);
+      return;
+    }
+    next();
+  },
   upload.array('videos', MAX_FILES_PER_UPLOAD),
   async (req, res): Promise<void> => {
     try {

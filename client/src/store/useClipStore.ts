@@ -23,7 +23,11 @@ import {
   persistProcessingMode,
   type ProcessingMode,
 } from '../features/processing/processing-mode';
-import { detectBrowserCapability } from '../features/processing/browser-capability';
+import {
+  detectBrowserCapability,
+  resolveAutoMode,
+} from '../features/processing/browser-capability';
+import { HOSTED_BROWSER_ONLY } from '../features/processing/hosted-mode';
 import {
   isBlobUrl,
   revokeManagedBlobUrl,
@@ -273,11 +277,29 @@ export const useClipStore = create<ClipStore>((set, get) => ({
     }
 
     if (processingMode === 'browser' && !detectBrowserCapability().crossOriginIsolated) {
-      return 'Browser mode is not available here — cross-origin isolation is missing. Switch to server or auto.';
+      return HOSTED_BROWSER_ONLY
+        ? 'This deployment processes videos locally in your browser, but cross-origin isolation is missing. Reload the page; if the problem persists your browser may be blocking it.'
+        : 'Browser mode is not available here — cross-origin isolation is missing. Switch to server or auto.';
     }
 
     if (processingMode === 'browser' && transitionEnabled && clips.length > 1) {
-      return 'Browser mode does not support crossfade transitions. Disable transitions or switch to server mode.';
+      return HOSTED_BROWSER_ONLY
+        ? 'Crossfade transitions are not yet supported in local browser processing. Disable transitions to continue.'
+        : 'Browser mode does not support crossfade transitions. Disable transitions or switch to server mode.';
+    }
+
+    // In hosted browser-only mode, run the browser workload policy
+    // synchronously here so over-cap jobs are blocked before any processor
+    // starts. Outside hosted mode this is handled inside AutoProcessor and
+    // the server pipeline has no such cap, so we skip it.
+    if (HOSTED_BROWSER_ONLY && (processingMode === 'browser' || processingMode === 'auto')) {
+      const options = getProcessingOptions();
+      if (options) {
+        const decision = resolveAutoMode(clips, options);
+        if (decision.mode === 'server') {
+          return `${decision.reason} Processing runs locally in your browser on this deployment — try fewer clips, shorter footage, or smaller files.`;
+        }
+      }
     }
 
     return null;

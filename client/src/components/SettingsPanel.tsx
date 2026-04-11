@@ -2,6 +2,7 @@ import { RotateCcw, Server, Globe, Sparkles } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
 import { MIN_ZOOM, MAX_ZOOM } from '../features/settings/zoomSettings';
 import { detectBrowserCapability } from '../features/processing/browser-capability';
+import { HOSTED_BROWSER_ONLY } from '../features/processing/hosted-mode';
 import type { ProcessingMode } from '../features/processing/processing-mode';
 
 type SettingsPanelProps = {
@@ -24,11 +25,21 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
   const browserCap = detectBrowserCapability();
   const browserAvailable = browserCap.crossOriginIsolated;
 
-  const modeOptions: { value: ProcessingMode; label: string; icon: typeof Server; hint: string }[] = [
-    { value: 'server', label: 'Server', icon: Server, hint: 'Process on the backend' },
-    { value: 'browser', label: 'Browser', icon: Globe, hint: 'Process on your machine' },
-    { value: 'auto', label: 'Auto', icon: Sparkles, hint: 'Best option chosen for you' },
-  ];
+  const modeOptions: { value: ProcessingMode; label: string; icon: typeof Server; hint: string }[] =
+    HOSTED_BROWSER_ONLY
+      ? [
+          {
+            value: 'browser',
+            label: 'Browser (this device)',
+            icon: Globe,
+            hint: 'Processing runs locally on your machine.',
+          },
+        ]
+      : [
+          { value: 'server', label: 'Server', icon: Server, hint: 'Process on the backend' },
+          { value: 'browser', label: 'Browser', icon: Globe, hint: 'Process on your machine' },
+          { value: 'auto', label: 'Auto', icon: Sparkles, hint: 'Best option chosen for you' },
+        ];
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const num = parseInt(e.target.value, 10);
@@ -161,9 +172,13 @@ export function SettingsPanel({ embedded = false }: SettingsPanelProps) {
           })}
         </div>
         <p className="fine-print mt-2">
-          {processingMode === 'server' && 'Uses backend FFmpeg for full-quality processing.'}
-          {processingMode === 'browser' && 'Processes locally in your browser. Best for lightweight projects.'}
-          {processingMode === 'auto' && 'Picks browser for small projects, server for heavier work.'}
+          {HOSTED_BROWSER_ONLY
+            ? 'This deployment processes videos locally on your device. Nothing is uploaded for export.'
+            : processingMode === 'server'
+              ? 'Uses backend FFmpeg for full-quality processing.'
+              : processingMode === 'browser'
+                ? 'Processes locally in your browser. Best for lightweight projects.'
+                : 'Picks browser for small projects, server for heavier work.'}
         </p>
         {!browserAvailable && (
           <p className="fine-print mt-1.5 text-[#fecdd3]">

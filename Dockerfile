@@ -15,6 +15,12 @@ WORKDIR /app
 
 COPY . .
 
+# Hosted browser-only deployment profile. When set to "true" the Vite build
+# bakes in VITE_HOSTED_BROWSER_ONLY=true so the client disables server mode,
+# hides server/auto UI, and routes all exports through BrowserProcessor.
+ARG HOSTED_BROWSER_ONLY=false
+ENV VITE_HOSTED_BROWSER_ONLY=${HOSTED_BROWSER_ONLY}
+
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runtime

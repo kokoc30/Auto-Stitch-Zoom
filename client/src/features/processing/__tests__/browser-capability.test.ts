@@ -58,12 +58,10 @@ describe('resolveAutoMode', () => {
     expect(decision.mode).toBe('browser');
   });
 
-  it('chooses browser for 3 clips within limits', () => {
-    const clips = [
-      makeClip({ id: '1', duration: 8, fileSize: 20 * 1024 * 1024 }),
-      makeClip({ id: '2', duration: 8, fileSize: 20 * 1024 * 1024 }),
-      makeClip({ id: '3', duration: 8, fileSize: 20 * 1024 * 1024 }),
-    ];
+  it('chooses browser for 6 clips within limits', () => {
+    const clips = Array.from({ length: 6 }, (_, i) =>
+      makeClip({ id: `clip-${i}`, duration: 10, fileSize: 25 * 1024 * 1024 }),
+    );
     const decision = resolveAutoMode(clips, makeOptions());
     expect(decision.mode).toBe('browser');
   });
@@ -80,8 +78,8 @@ describe('resolveAutoMode', () => {
     expect(decision.reason).toMatch(/cross-origin/i);
   });
 
-  it('chooses server when clip count exceeds limit', () => {
-    const clips = Array.from({ length: 4 }, (_, i) =>
+  it('chooses server when clip count exceeds the 6-clip limit', () => {
+    const clips = Array.from({ length: 7 }, (_, i) =>
       makeClip({ id: `clip-${i}`, duration: 5, fileSize: 5 * 1024 * 1024 }),
     );
     const decision = resolveAutoMode(clips, makeOptions());
@@ -89,20 +87,31 @@ describe('resolveAutoMode', () => {
     expect(decision.reason).toMatch(/clips/i);
   });
 
-  it('chooses server when total size exceeds 100 MB', () => {
+  it('chooses server when total size exceeds 200 MB', () => {
     const clips = [
-      makeClip({ id: '1', fileSize: 60 * 1024 * 1024 }),
-      makeClip({ id: '2', fileSize: 60 * 1024 * 1024 }),
+      makeClip({ id: '1', fileSize: 70 * 1024 * 1024 }),
+      makeClip({ id: '2', fileSize: 70 * 1024 * 1024 }),
+      makeClip({ id: '3', fileSize: 70 * 1024 * 1024 }),
     ];
     const decision = resolveAutoMode(clips, makeOptions());
     expect(decision.mode).toBe('server');
     expect(decision.reason).toMatch(/size/i);
   });
 
-  it('chooses server when total duration exceeds 30 seconds', () => {
+  it('chooses server when one clip exceeds the 80 MB per-clip cap even if total is under 200 MB', () => {
     const clips = [
-      makeClip({ id: '1', duration: 20 }),
-      makeClip({ id: '2', duration: 15 }),
+      makeClip({ id: '1', fileSize: 90 * 1024 * 1024 }),
+      makeClip({ id: '2', fileSize: 10 * 1024 * 1024 }),
+    ];
+    const decision = resolveAutoMode(clips, makeOptions());
+    expect(decision.mode).toBe('server');
+    expect(decision.reason).toMatch(/per-clip/i);
+  });
+
+  it('chooses server when total duration exceeds 90 seconds', () => {
+    const clips = [
+      makeClip({ id: '1', duration: 50 }),
+      makeClip({ id: '2', duration: 45 }),
     ];
     const decision = resolveAutoMode(clips, makeOptions());
     expect(decision.mode).toBe('server');

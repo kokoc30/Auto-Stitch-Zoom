@@ -5,8 +5,17 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     healthCheckPath: /health
+    # Render Free cannot run the server-side ffmpeg pipeline without OOM
+    # crashes. HOSTED_BROWSER_ONLY=true makes this deployment a browser-only
+    # profile: the app shell + ffmpeg.wasm assets are served, but /api/process
+    # and /api/upload are blocked with 403. All encoding runs on the user's
+    # machine. See docs/deployment.md for details and workload limits.
+    dockerBuildArgs:
+      HOSTED_BROWSER_ONLY: "true"
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3001"
+      - key: HOSTED_BROWSER_ONLY
+        value: "true"

@@ -42,9 +42,11 @@ asset copy step), and starts the compiled server. Uploaded clips live under
 `/app/server/tmp/uploads` inside the container; mount a volume if you want
 persistence across restarts.
 
-## Render deployment
+## Render deployment (browser-only profile)
 
-The repo ships a `render.yaml` that deploys the Docker image directly:
+The repo ships a `render.yaml` that deploys the Docker image directly **in
+hosted browser-only mode**, because Render Free cannot reliably run the
+server-side ffmpeg pipeline without OOM crashes.
 
 ```yaml
 services:
@@ -53,12 +55,82 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
+    dockerBuildArgs:
+      HOSTED_BROWSER_ONLY: "true"
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3001"
+      - key: HOSTED_BROWSER_ONLY
+        value: "true"
 ```
+
+### What "browser-only" means on Render
+
+- Render hosts only the app shell: the SPA bundle, the static `/ffmpeg/*`
+  assets, and `/health`. Uploads and exports never touch Render storage.
+- All video decoding, stitching, zoom-crop, and encoding runs in the user's
+  browser tab via `ffmpeg.wasm`.
+- `POST /api/process`, `GET /api/job/:jobId/status`, `GET /api/preview/:jobId`,
+  `GET /api/download/:jobId`, and `POST /api/upload` all respond `403` —
+  there is no silent server fallback. A stale client that still targets any
+  of these paths gets a clear JSON error.
+- The UI hides the Server and Auto mode buttons. The only processing mode
+  shown is "Browser (this device)".
+- Stale `auto-stitch-zoom.processing-mode` localStorage values from earlier
+  full-stack deployments (`'server'` / `'auto'`) are rewritten to `'browser'`
+  on page load, so returning visitors never see the server UI.
+
+### Two envs, one flag
+
+The flag must be set in **two places**:
+
+1. `dockerBuildArgs.HOSTED_BROWSER_ONLY=true` — forwarded into the Vite
+   build as `VITE_HOSTED_BROWSER_ONLY`, baked into the client bundle at
+   build time. This is what disables server UI and the Auto-mode server
+   fallback path in the client.
+2. `envVars.HOSTED_BROWSER_ONLY=true` — read by Node at runtime to 403 the
+   processing + upload routes. This is belt-and-braces: even if a stale
+   cached client somehow fired a request, the server rejects it.
+
+Dropping either half is a deployment bug — both are required.
+
+### Workload limits on the hosted profile
+
+Browser processing uses single-threaded `ffmpeg.wasm` in a wasm32 tab heap,
+so there are real limits to what can run locally. Jobs above any of these
+caps are blocked **before** processing starts, with a clear client-side
+message that explains what to change. See
+[`browser-capability.ts`](../client/src/features/processing/browser-capability.ts)
+for the authoritative constants.
+
+| Limit | Value |
+|---|---|
+| Max clips per project | **6** |
+| Max total input size | **200 MB** |
+| Max single-clip size | **80 MB** |
+| Max total duration | **90 seconds** |
+| Crossfade transitions | not supported |
+| Cross-origin isolation | required (COOP + COEP headers) |
+
+If a project exceeds any cap, the Start button stays disabled and the UI
+explains which cap was hit and how to adjust (fewer/shorter/smaller clips,
+disable transitions). No network requests are sent.
+
+### What to do when the hosted profile is too small
+
+Run the full server+browser build locally or on a paid host with enough
+memory for the native ffmpeg pipeline:
+
+```bash
+# No HOSTED_BROWSER_ONLY — full three-mode build.
+docker build -t auto-stitch-zoom-full .
+docker run --rm -p 3001:3001 auto-stitch-zoom-full
+```
+
+The full build exposes Server / Browser / Auto and supports arbitrarily
+large projects constrained only by host memory and disk.
 
 Create a new **Blueprint** in Render pointed at this repo. Render will use
 the Dockerfile and `/health` for health checks. The `/health` endpoint is
@@ -101,8 +173,13 @@ generated at build time, not tracked in git.
 
 - `crossOriginIsolated` must be `true`.
 - Reachability of `/ffmpeg/ffmpeg-core.wasm` (HEAD probe, cached on success).
-- Workload caps: up to 3 clips, 100 MB total, 30 seconds total duration.
+- Workload caps: up to **6 clips**, **200 MB total** (with an **80 MB
+  per-clip** cap), **90 seconds total duration**.
 - No crossfade transitions (browser mode does not implement them yet).
+
+In hosted browser-only deployments, failing any of these caps does **not**
+fall back to the server — the start button is blocked with a message
+explaining which cap was hit.
 
 If any check fails, auto falls back to server with a human-readable reason.
 See [`browser-capability.ts`](../client/src/features/processing/browser-capability.ts)

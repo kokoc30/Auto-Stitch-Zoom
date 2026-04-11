@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -8,9 +8,31 @@ import { processClips } from '../services/processing.service.js';
 import type { ProcessingRequest } from '../services/processing.service.js';
 import { jobStore } from '../services/jobStore.js';
 import { logger } from '../utils/logger.js';
+import { HOSTED_BROWSER_ONLY } from '../env.js';
 import type { ProcessingOptions } from '../types/processing.types.js';
 
 const router = Router();
+
+/**
+ * Per-route guard for hosted browser-only deployments.
+ *
+ * When HOSTED_BROWSER_ONLY=true, the server-side processing pipeline is
+ * disabled: all four processing endpoints respond 403. Attaching the guard
+ * per-route (rather than as a blanket `/api/*` middleware) keeps /health
+ * and static asset serving alive, and leaves room for new non-processing
+ * endpoints in the future.
+ */
+const blockWhenHostedBrowserOnly: RequestHandler = (_req, res, next) => {
+  if (HOSTED_BROWSER_ONLY) {
+    res.status(403).json({
+      success: false,
+      error:
+        'Server processing is disabled on this deployment. Processing runs locally in your browser.',
+    });
+    return;
+  }
+  next();
+};
 
 // Simple in-memory guard so the same request does not start twice.
 const activeJobs = new Set<string>();
@@ -66,7 +88,7 @@ async function resolveOutputFile(jobId: string): Promise<{
   };
 }
 
-router.post('/process', async (req, res): Promise<void> => {
+router.post('/process', blockWhenHostedBrowserOnly, async (req, res): Promise<void> => {
   try {
     const body = req.body as Partial<ProcessingRequest>;
     const processingOptions = body.processingOptions as ProcessingOptions | undefined;
@@ -215,7 +237,7 @@ router.post('/process', async (req, res): Promise<void> => {
   }
 });
 
-router.get('/job/:jobId/status', (req, res): void => {
+router.get<'/job/:jobId/status', { jobId: string }>('/job/:jobId/status', blockWhenHostedBrowserOnly, (req, res): void => {
   const { jobId } = req.params;
 
   if (!jobId) {
@@ -273,7 +295,7 @@ router.get('/job/:jobId/status', (req, res): void => {
   });
 });
 
-router.get('/preview/:jobId', async (req, res): Promise<void> => {
+router.get('/preview/:jobId', blockWhenHostedBrowserOnly, async (req, res): Promise<void> => {
   try {
     const { jobId } = req.params;
 
@@ -363,7 +385,7 @@ router.get('/preview/:jobId', async (req, res): Promise<void> => {
   }
 });
 
-router.get('/download/:jobId', async (req, res): Promise<void> => {
+router.get('/download/:jobId', blockWhenHostedBrowserOnly, async (req, res): Promise<void> => {
   try {
     const { jobId } = req.params;
 

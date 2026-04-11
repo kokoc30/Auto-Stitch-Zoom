@@ -1,5 +1,6 @@
 import { Play, Loader2, AlertCircle, CheckCircle2, Search, Monitor, Film, Combine } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
+import { HOSTED_BROWSER_ONLY } from '../features/processing/hosted-mode';
 
 const PIPELINE_STEPS = [
   { key: 'validating', label: 'Validate', icon: Search },
@@ -56,9 +57,11 @@ export function ProcessingSection({ embedded = false }: ProcessingSectionProps) 
       ? 'Processing in this browser'
       : activeProcessingMode === 'server'
         ? 'Processing on the server'
-        : processingMode === 'auto'
-          ? 'Choosing the best runtime...'
-          : null;
+        : HOSTED_BROWSER_ONLY
+          ? 'Processing in this browser'
+          : processingMode === 'auto'
+            ? 'Choosing the best runtime...'
+            : null;
 
   const isProcessing = processingStatus === 'processing';
   const isDone = processingStatus === 'done';
