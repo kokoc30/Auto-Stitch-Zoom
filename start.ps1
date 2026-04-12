@@ -1,6 +1,6 @@
 param(
   [switch]$Share,
-  [ValidateSet('ngrok')]
+  [ValidateSet('ngrok', 'cloudflared')]
   [string]$Tunnel
 )
 
@@ -16,6 +16,17 @@ function Fail {
   param([string]$Message)
   Write-Host "[start] $Message" -ForegroundColor Red
   exit 1
+}
+
+function Invoke-Npm {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Args
+  )
+
+  $npmCommand = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'npm.cmd' } else { 'npm' }
+  & $npmCommand @Args
+  return $LASTEXITCODE
 }
 
 Set-Location $projectRoot
@@ -42,12 +53,15 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   Fail "npm is not available in PATH."
 }
 
-if (-not (Test-Path (Join-Path $projectRoot 'client\node_modules'))) {
-  Fail "Client dependencies are missing. Run 'npm run install:all' from the project root first."
-}
+$clientModules = Test-Path (Join-Path $projectRoot 'client\node_modules')
+$serverModules = Test-Path (Join-Path $projectRoot 'server\node_modules')
 
-if (-not (Test-Path (Join-Path $projectRoot 'server\node_modules'))) {
-  Fail "Server dependencies are missing. Run 'npm run install:all' from the project root first."
+if (-not $clientModules -or -not $serverModules) {
+  Write-Step "Dependencies missing - running npm run install:all..."
+  $exitCode = Invoke-Npm -Args @('run', 'install:all')
+  if ($exitCode -ne 0) {
+    Fail "npm run install:all failed. Run '.\setup.ps1' for full first-time setup."
+  }
 }
 
 $ffmpegAvailable = $false
@@ -66,24 +80,30 @@ if ($env:FFPROBE_BIN) {
 }
 
 if (-not $ffmpegAvailable -or -not $ffprobeAvailable) {
-  Write-Warning 'FFmpeg or ffprobe was not found in this shell. The backend can still start, but processing requires ffmpeg/ffprobe on PATH or FFMPEG_BIN / FFPROBE_BIN to be configured.'
+  Write-Warning "FFmpeg or ffprobe was not found in this shell. The backend can still start, but processing requires ffmpeg/ffprobe on PATH or FFMPEG_BIN / FFPROBE_BIN to be configured."
 }
 
-$shareMode = $Share -or ($Tunnel -eq 'ngrok')
+$shareMode = $Share -or ($Tunnel -eq 'ngrok') -or ($Tunnel -eq 'cloudflared')
 
 if ($shareMode) {
-  Write-Step 'Share mode: building full local-share profile and launching ngrok...'
-  Write-Step 'The public URL will be printed below once ngrok is ready.'
-  Write-Step 'Press Ctrl+C to stop the server and the tunnel.'
-  npm run share:ngrok
-} else {
-  Write-Step 'Starting backend and frontend...'
-  Write-Step 'Backend: http://localhost:3001'
-  Write-Step 'Frontend: watch for the Vite local URL below (usually http://localhost:5173)'
-  Write-Step 'Press Ctrl+C to stop both.'
-  npm run dev
+  $selectedTunnel = if ($Tunnel) { $Tunnel } else { 'cloudflared' }
+
+  Write-Step "Share mode requested."
+  Write-Step "Start the app in Terminal 1 with one of these:"
+  Write-Step "  npm run start:prod"
+  Write-Step "  npm run serve:prod"
+  Write-Step "Then open Terminal 2 and run:"
+  Write-Step "  npm run tunnel:$selectedTunnel"
+  Write-Step "This script does not launch the tunnel automatically."
+  exit 0
 }
 
-if ($LASTEXITCODE -ne 0) {
-  exit $LASTEXITCODE
+Write-Step "Starting backend and frontend..."
+Write-Step "Backend: http://localhost:3001"
+Write-Step "Frontend: watch for the Vite local URL below (usually http://localhost:5173)"
+Write-Step "Press Ctrl+C to stop both."
+
+$exitCode = Invoke-Npm -Args @('run', 'dev')
+if ($exitCode -ne 0) {
+  exit $exitCode
 }
