@@ -1,15 +1,25 @@
 import { Download } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
+import { sanitizeFilename } from '../features/processing/sanitize-filename';
+
+const DEFAULT_FILENAME = 'final-output.mp4';
 
 export function DownloadSection() {
   const processingStatus = useClipStore((s) => s.processingStatus);
   const outputUrl = useClipStore((s) => s.outputUrl);
+  const outputTitle = useClipStore((s) => s.outputTitle);
   const getOutputResolution = useClipStore((s) => s.getOutputResolution);
 
   if (processingStatus !== 'done' || !outputUrl) return null;
 
   const res = getOutputResolution();
   const resText = res ? `${res.width}x${res.height}` : 'original resolution';
+
+  const resolvedFilename = sanitizeFilename(outputTitle) ?? DEFAULT_FILENAME;
+  const isBlobDownload = outputUrl.startsWith('blob:');
+  const downloadHref = isBlobDownload
+    ? outputUrl
+    : `${outputUrl}?title=${encodeURIComponent(resolvedFilename)}`;
 
   return (
     <div className="panel px-5 py-5 sm:px-6 sm:py-6">
@@ -37,8 +47,8 @@ export function DownloadSection() {
 
         <a
           data-testid="download-link"
-          href={outputUrl}
-          download="final-output.mp4"
+          href={downloadHref}
+          download={resolvedFilename}
           className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[20px] border border-white/80 bg-white px-4 py-3.5 text-sm font-semibold text-[#03121d] transition duration-200 shadow-[0_20px_48px_-28px_rgba(255,255,255,0.5)] hover:-translate-y-0.5 hover:bg-[#f4fbff] active:translate-y-0"
         >
           <Download size={20} />

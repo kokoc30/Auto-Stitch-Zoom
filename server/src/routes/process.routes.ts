@@ -411,8 +411,18 @@ router.get('/download/:jobId', blockWhenHostedBrowserOnly, async (req, res): Pro
     const { filePath, fileStat } = resolvedOutput;
     const fileSize = Number(fileStat.size);
 
+    const titleParam = typeof req.query.title === 'string' ? req.query.title.trim() : '';
+    const safeTitleParam = titleParam
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f"\\;\n\r]/g, '')
+      .trim();
+    const downloadFilename =
+      safeTitleParam.length > 0 && safeTitleParam.length <= 200 && safeTitleParam.endsWith('.mp4')
+        ? safeTitleParam
+        : 'final-output.mp4';
+
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="final-output.mp4"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
     res.setHeader('Content-Length', String(fileSize));
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-store');

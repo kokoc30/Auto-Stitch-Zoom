@@ -38,23 +38,87 @@ function runCommand(args, env = process.env) {
   });
 }
 
+function parsePort(raw) {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+    return null;
+  }
+  return parsed;
+}
+
 async function main() {
-  const port = process.env.PORT || '3001';
+  if (process.env.HOSTED_BROWSER_ONLY === 'true') {
+    console.error(
+      '[start:prod] Refusing to start: HOSTED_BROWSER_ONLY=true is set.\n' +
+        '             This runner is for the FULL local-share profile where\n' +
+        '             server-side processing runs on this machine. The hosted\n' +
+        '             browser-only profile is for Render Free and disables\n' +
+        '             server processing — the two modes are mutually exclusive.\n' +
+        '             Unset HOSTED_BROWSER_ONLY (and VITE_HOSTED_BROWSER_ONLY)\n' +
+        '             and try again, or deploy via the Render path in\n' +
+        '             docs/deployment.md instead.'
+    );
+    process.exit(1);
+  }
+
+  const port = parsePort(process.env.PORT) ?? 3001;
   const host = process.env.HOST || '0.0.0.0';
+  const publicBaseUrl =
+    process.env.PUBLIC_BASE_URL || process.env.APP_ORIGIN || '';
+  const accessGateEnabled = (process.env.SHARE_ACCESS_PASSWORD ?? '') !== '';
+
   const env = {
     ...process.env,
     NODE_ENV: 'production',
     HOST: host,
-    PORT: port,
+    PORT: String(port),
   };
 
   log('Building Auto Stitch & Zoom for a single-server local run...');
   await runCommand(['run', 'build'], env);
 
-  log(`Starting production server on http://localhost:${port}`);
-  log('This is the recommended mode for Cloudflare Tunnel sharing.');
-  log(`Cloudflare Tunnel target: http://localhost:${port}`);
-  log('Press Ctrl+C to stop the server.');
+  const localUrl = `http://localhost:${port}`;
+  const bannerLines = [
+    '',
+    '================================================================',
+    ' Auto Stitch & Zoom — local share mode (full profile)',
+    '================================================================',
+    ` Local URL:          ${localUrl}`,
+    ` Health check:       ${localUrl}/health`,
+    ` Bind:               ${host}:${port}`,
+    ' Processing modes:   Browser + Server + Auto (all enabled)',
+    '                     Server jobs run on THIS machine.',
+  ];
+  if (publicBaseUrl) {
+    bannerLines.push(` Public URL (hint):  ${publicBaseUrl}`);
+    bannerLines.push(`                     ${publicBaseUrl}/health`);
+  } else {
+    bannerLines.push(
+      ' Public URL:         (none set — export PUBLIC_BASE_URL to echo it here)'
+    );
+  }
+  if (accessGateEnabled) {
+    bannerLines.push(
+      ' Access gate:        ENABLED — visitors must enter SHARE_ACCESS_PASSWORD',
+      '                     Share the password out-of-band with trusted users.'
+    );
+  } else {
+    bannerLines.push(
+      ' Access gate:        disabled (set SHARE_ACCESS_PASSWORD to enable)'
+    );
+  }
+  bannerLines.push(
+    ' To expose publicly: in a second terminal run one of:',
+    '   npm run tunnel:ngrok',
+    '   npm run tunnel:cloudflared',
+    ' Share the tunnel URL with TRUSTED users only. See docs/local-share.md.',
+    ' Press Ctrl+C to stop the server.',
+    '================================================================',
+    ''
+  );
+  for (const line of bannerLines) {
+    log(line);
+  }
 
   await runCommand(['--prefix', 'server', 'run', 'start'], env);
 }

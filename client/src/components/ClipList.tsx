@@ -13,9 +13,10 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { ArrowDownUp, Film, Trash2 } from 'lucide-react';
+import { ArrowDownUp, Film, Trash2, Type } from 'lucide-react';
 import { useClipStore } from '../store/useClipStore';
 import { ClipCard } from './ClipCard';
+import { sanitizeFilename } from '../features/processing/sanitize-filename';
 
 export function ClipList() {
   const clips = useClipStore((s) => s.clips);
@@ -24,6 +25,8 @@ export function ClipList() {
   const removeClip = useClipStore((s) => s.removeClip);
   const reorderClips = useClipStore((s) => s.reorderClips);
   const clearClips = useClipStore((s) => s.clearClips);
+  const outputTitle = useClipStore((s) => s.outputTitle);
+  const setOutputTitle = useClipStore((s) => s.setOutputTitle);
   const isLocked = isUploading || processingStatus === 'processing';
 
   const sensors = useSensors(
@@ -99,6 +102,36 @@ export function ClipList() {
           <Trash2 size={14} />
           Clear All
         </button>
+      </div>
+
+      <div className="mt-4 rounded-[22px] border border-[rgba(155,182,214,0.14)] bg-[rgba(8,19,33,0.54)] px-4 py-3.5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="icon-shell h-10 w-10 shrink-0">
+              <Type className="h-4 w-4" />
+            </div>
+            <label htmlFor="output-title" className="text-sm font-semibold text-white whitespace-nowrap">
+              Video title
+            </label>
+          </div>
+          <div className="flex-1 min-w-0">
+            <input
+              id="output-title"
+              data-testid="output-title-input"
+              type="text"
+              value={outputTitle}
+              onChange={(e) => setOutputTitle(e.target.value)}
+              placeholder="Enter video title"
+              maxLength={160}
+              className="w-full rounded-xl border border-[rgba(155,182,214,0.18)] bg-[rgba(7,17,31,0.44)] px-3.5 py-2 text-sm text-white placeholder:text-[rgba(155,182,214,0.45)] outline-none focus:border-[rgba(155,182,214,0.4)] transition-colors"
+            />
+            <p className="fine-print mt-1.5">
+              Used for the downloaded MP4 name.{outputTitle && !sanitizeFilename(outputTitle) && (
+                <span className="text-amber-400/80"> Current title is not a valid filename and will be ignored.</span>
+              )}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="mt-5 flex flex-col gap-3 rounded-[22px] border border-[rgba(155,182,214,0.14)] bg-[rgba(8,19,33,0.54)] px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between">

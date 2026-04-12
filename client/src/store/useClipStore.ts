@@ -61,6 +61,7 @@ type ClipStore = {
   progressPercent: number;
   processingClipIndex: number;
   processingTotalClips: number;
+  outputTitle: string;
   getOutputResolution: () => { width: number; height: number } | null;
   getResolutionMismatch: () => boolean;
   getAspectRatioMismatch: () => boolean;
@@ -79,6 +80,7 @@ type ClipStore = {
   resetZoom: () => void;
   setTransitionEnabled: (enabled: boolean) => void;
   setProcessingMode: (mode: ProcessingMode) => void;
+  setOutputTitle: (value: string) => void;
   addToast: (text: string, type: ToastMessage['type']) => void;
   dismissToast: (id: string) => void;
   startProcessing: () => Promise<void>;
@@ -188,6 +190,7 @@ export const useClipStore = create<ClipStore>((set, get) => ({
   transitionEnabled: true,
   toasts: [],
   processingMode: initialProcessingMode,
+  outputTitle: '',
   ...getIdleProcessingState(),
 
   getOutputResolution: () => {
@@ -443,6 +446,10 @@ export const useClipStore = create<ClipStore>((set, get) => ({
       transitionEnabled: enabled,
       ...getInvalidatedProcessingState(current.processingStatus, current.outputUrl, current.previewUrl),
     });
+  },
+
+  setOutputTitle: (value) => {
+    set({ outputTitle: value });
   },
 
   setProcessingMode: (mode) => {

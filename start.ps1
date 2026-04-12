@@ -1,4 +1,8 @@
-param()
+param(
+  [switch]$Share,
+  [ValidateSet('ngrok')]
+  [string]$Tunnel
+)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -65,12 +69,20 @@ if (-not $ffmpegAvailable -or -not $ffprobeAvailable) {
   Write-Warning 'FFmpeg or ffprobe was not found in this shell. The backend can still start, but processing requires ffmpeg/ffprobe on PATH or FFMPEG_BIN / FFPROBE_BIN to be configured.'
 }
 
-Write-Step 'Starting backend and frontend...'
-Write-Step 'Backend: http://localhost:3001'
-Write-Step 'Frontend: watch for the Vite local URL below (usually http://localhost:5173)'
-Write-Step 'Press Ctrl+C to stop both.'
+$shareMode = $Share -or ($Tunnel -eq 'ngrok')
 
-npm run dev
+if ($shareMode) {
+  Write-Step 'Share mode: building full local-share profile and launching ngrok...'
+  Write-Step 'The public URL will be printed below once ngrok is ready.'
+  Write-Step 'Press Ctrl+C to stop the server and the tunnel.'
+  npm run share:ngrok
+} else {
+  Write-Step 'Starting backend and frontend...'
+  Write-Step 'Backend: http://localhost:3001'
+  Write-Step 'Frontend: watch for the Vite local URL below (usually http://localhost:5173)'
+  Write-Step 'Press Ctrl+C to stop both.'
+  npm run dev
+}
 
 if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE

@@ -22,7 +22,14 @@ upload clips, reorder them, apply one zoom/crop setting, process them, preview t
 - **Backend:** Node.js, TypeScript, Express, Multer
 - **Video processing:** FFmpeg + ffprobe
 - **Drag and drop:** `@dnd-kit`
-- **Deployment:** Docker + Render
+- **Deployment:** Docker + Render (hosted browser-only profile) or local public share via ngrok / Cloudflare Tunnel
+
+## Share locally
+
+To run the full app on your own machine and expose it to a few trusted
+friends through a public tunnel (ngrok, Cloudflare Tunnel, etc.), see
+[docs/local-share.md](docs/local-share.md). Short version:
+`npm run share:local` in one terminal, `npm run tunnel:ngrok` in another.
 
 ## Project Structure
 

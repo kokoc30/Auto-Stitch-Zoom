@@ -7,7 +7,27 @@ import { UPLOAD_BASE_DIR } from '../config/upload.config.js';
 import { processClips } from '../services/processing.service.js';
 import { jobStore } from '../services/jobStore.js';
 import { logger } from '../utils/logger.js';
+import { HOSTED_BROWSER_ONLY } from '../env.js';
 const router = Router();
+/**
+ * Per-route guard for hosted browser-only deployments.
+ *
+ * When HOSTED_BROWSER_ONLY=true, the server-side processing pipeline is
+ * disabled: all four processing endpoints respond 403. Attaching the guard
+ * per-route (rather than as a blanket `/api/*` middleware) keeps /health
+ * and static asset serving alive, and leaves room for new non-processing
+ * endpoints in the future.
+ */
+const blockWhenHostedBrowserOnly = (_req, res, next) => {
+    if (HOSTED_BROWSER_ONLY) {
+        res.status(403).json({
+            success: false,
+            error: 'Server processing is disabled on this deployment. Processing runs locally in your browser.',
+        });
+        return;
+    }
+    next();
+};
 // Simple in-memory guard so the same request does not start twice.
 const activeJobs = new Set();
 async function resolveOutputFile(jobId) {
@@ -46,7 +66,7 @@ async function resolveOutputFile(jobId) {
         fileStat,
     };
 }
-router.post('/process', async (req, res) => {
+router.post('/process', blockWhenHostedBrowserOnly, async (req, res) => {
     try {
         const body = req.body;
         const processingOptions = body.processingOptions;
@@ -178,7 +198,7 @@ router.post('/process', async (req, res) => {
         });
     }
 });
-router.get('/job/:jobId/status', (req, res) => {
+router.get('/job/:jobId/status', blockWhenHostedBrowserOnly, (req, res) => {
     const { jobId } = req.params;
     if (!jobId) {
         logger.warn('process', 'SSE status request missing job ID');
@@ -226,7 +246,7 @@ router.get('/job/:jobId/status', (req, res) => {
         unsubscribe();
     });
 });
-router.get('/preview/:jobId', async (req, res) => {
+router.get('/preview/:jobId', blockWhenHostedBrowserOnly, async (req, res) => {
     try {
         const { jobId } = req.params;
         if (!jobId || typeof jobId !== 'string') {
@@ -306,7 +326,7 @@ router.get('/preview/:jobId', async (req, res) => {
         res.status(500).json({ success: false, error: 'Preview failed unexpectedly.' });
     }
 });
-router.get('/download/:jobId', async (req, res) => {
+router.get('/download/:jobId', blockWhenHostedBrowserOnly, async (req, res) => {
     try {
         const { jobId } = req.params;
         if (!jobId || typeof jobId !== 'string') {
@@ -329,8 +349,12 @@ router.get('/download/:jobId', async (req, res) => {
         }
         const { filePath, fileStat } = resolvedOutput;
         const fileSize = Number(fileStat.size);
+        const titleParam = typeof req.query.title === 'string' ? req.query.title.trim() : '';
+        const downloadFilename = titleParam.length > 0 && titleParam.length <= 200
+            ? titleParam.replace(/[^\w\s.\-()]/g, '').trim() || 'final-output.mp4'
+            : 'final-output.mp4';
         res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', `attachment; filename="final-output.mp4"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
         res.setHeader('Content-Length', String(fileSize));
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Cache-Control', 'no-store');

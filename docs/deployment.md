@@ -120,8 +120,11 @@ disable transitions). No network requests are sent.
 
 ### What to do when the hosted profile is too small
 
-Run the full server+browser build locally or on a paid host with enough
-memory for the native ffmpeg pipeline:
+For a quick way to share the full profile with a few trusted friends
+without paying for a host, run it locally and expose it through a tunnel —
+see [local-share.md](./local-share.md). Otherwise, run the full
+server+browser build locally or on a paid host with enough memory for the
+native ffmpeg pipeline:
 
 ```bash
 # No HOSTED_BROWSER_ONLY — full three-mode build.
